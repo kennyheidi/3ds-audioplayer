@@ -10,7 +10,7 @@
 // Bigger = more decode time before a gap, but more latency.
 // 4096 frames = ~93ms at 44100Hz — enough headroom for O3DS MP3 decode.
 // We keep 4 buffers (was 2) so the DSP always has 2 queued ahead.
-#define FRAMES_PER_BUF   4096
+#define FRAMES_PER_BUF   8192
 #define BUFFER_SIZE      (FRAMES_PER_BUF * 2)  // *2 for stereo s16 samples
 #define NUM_BUFS         4                       // was 2 — extra cushion for O3DS
 
