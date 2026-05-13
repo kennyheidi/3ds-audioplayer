@@ -16,15 +16,18 @@ SystemControlInfo:
   StackSize:     0x100000
 
 AccessControlInfo:
-  # Mandatory fields for this version of makerom
+  # CoreVersion & scheduling (Mandatory)
   CoreVersion:       2
-  Priority:          16
+  Priority:          0x10
   IdealProcessor:    0
   MemoryType:        Application
   HandleTableSize:   0x200
   
-  # Hardware and Memory permissions
+  # Hardware and Memory permissions (Fixed Key Names)
   SystemMode:        96MB
+  SystemModeExt:     124MB
+  CpuSpeed:          804MHz
+  EnableL2Cache:     true
   
   FileSystemAccess:
     - SdmcRw
