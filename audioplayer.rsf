@@ -8,7 +8,7 @@ RomFs:
 
 TitleInfo:
   Category                : Application
-  UniqueId                : 0xBEEF0
+  UniqueId                : 0xF7AB1
 
 Option:
   UseOnSD                 : true
@@ -48,7 +48,6 @@ AccessControlInfo:
   RunnableOnSleep               : true
   SpecialMemoryArrange          : true
 
-  # New3DS settings
   SystemModeExt                 : 124MB
   CpuSpeed                      : 804MHz
   EnableL2Cache                 : true
@@ -109,7 +108,6 @@ AccessControlInfo:
     UnmapMemoryBlock: 32
     WaitSynchronization1: 36
     WaitSynchronizationN: 37
-    Backdoor: 123
 
   ServiceAccessControl:
    - APT:U
