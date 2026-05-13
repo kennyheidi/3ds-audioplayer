@@ -1,28 +1,30 @@
 TitleInfo:
-  Category: Application
-  UniqueId: 0xBEEF0
-
-SystemControlInfo:
-  SaveDataSize: 0KB
+  Category        : Application
+  UniqueId        : 0xBEEF0
 
 BasicInfo:
-  Title: 3DS Audio Player
-  CompanyCode: 00
-  ProductCode: CTR-P-AUDP
+  Title           : 3DS Audio Player
+  CompanyCode     : 00
+  ProductCode     : CTR-P-AUDP
+  Logo            : Nintendo
+
+SystemControlInfo:
+  SaveDataSize    : 0KB
 
 AccessControlInfo:
-  UseExtSaveData: false
+  CoreVersion     : 2
   UseOtherVariationSaveData: false
-  FileSystemAccess:
-  - SdCard
-  CoreVersion: 2
-  DescVersion: 2
-  FirmwareType: CtrStandard
-  IdealProcessor: 0
-  AffinityMask: 1
-  Priority: 48
-  MaxCpu: 0
-  ExHeader:
-    SystemMode: Prod
-    SystemModeExt: Legacy
-    EnableL2Cache: true
+  DescVersion     : 2
+  IdealProcessor  : 0
+  AffinityMask    : 1
+  Priority        : 48
+  MaxCpu          : 0
+  ServiceAccessControl:
+    - APT:U
+    - dsp::DSP
+    - fs:USER
+    - gsp::Gpu
+    - hid:USER
+    - cfg:u
+    - ptm:u
+    - ndm:u
