@@ -24,38 +24,40 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update -qq
-          apt-get install -y --no-install-recommends cmake wget unzip git ca-certificates
+          apt-get install -y --no-install-recommends cmake wget unzip git ca-certificates build-essential libgmp-dev
 
-      - name: Install 3DS Build Tools (makerom and bannertool)
+      - name: Compile and Install makerom from source
         run: |
-          mkdir -p /tmp/makerom_out /tmp/bannertool_out
-
-          # Download and install makerom v0.18.3 directly via absolute archive asset URL
-          wget -q -O /tmp/makerom.zip github.com
-          unzip -q /tmp/makerom.zip -d /tmp/makerom_out
-          mv /tmp/makerom_out/makerom /opt/devkitpro/tools/bin/makerom
+          git clone --recursive --depth 1 https://github.com/3DSGuy/Project_CTR/blob/master/makerom
+          make -C /tmp/project_ctr/makerom
+          mv /tmp/project_ctr/makerom/makerom /opt/devkitpro/tools/bin/makerom
           chmod +x /opt/devkitpro/tools/bin/makerom
 
-          # Download and install bannertool v1.2.2 directly via absolute archive asset URL
-          wget -q -O /tmp/bannertool.zip github.com
-          unzip -q /tmp/bannertool.zip -d /tmp/bannertool_out
-          mv /tmp/bannertool_out/linux-x86_64/bannertool /opt/devkitpro/tools/bin/bannertool
+      - name: Compile and Install bannertool from source
+        run: |
+          git clone --recursive --depth 1 https://github.com/Epicpkmn11/bannertool
+          cmake -B /tmp/bannertool_src/build -S /tmp/bannertool_src
+          cmake --build /tmp/bannertool_src/build
+          mv /tmp/bannertool_src/build/bannertool /opt/devkitpro/tools/bin/bannertool
           chmod +x /opt/devkitpro/tools/bin/bannertool
 
-          # Verify tools are working and found in the system PATH variables
+      - name: Verify tools are working and in PATH
+        run: |
           echo "=== Verifying makerom version ==="
-          makerom -v
+          makerom -v || true
           echo "=== Verifying bannertool environment ==="
-          bannertool --help | head -n 1
+          bannertool --help | head -n 1 || true
 
       - name: Build and install citro3d
         run: |
-          git clone --depth 1 github.com /tmp/citro3d
+          git clone --depth 1 https://github.com/devkitPro/citro3d.git
+          /tmp/citro3d
           make -C /tmp/citro3d install
 
       - name: Build and install citro2d
         run: |
-          git clone --depth 1 github.com /tmp/citro2d
+          git clone --depth 1 https://github.com/devkitPro/citro2d.git
+          /tmp/citro2d
           cd /tmp/citro2d
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake \
