@@ -1,6 +1,6 @@
 #---------------------------------------------------------------------------------
 # 3DS Audio Player — Makefile
-# Requires devkitARM + libctru + citro2d + bannertool + makerom
+# Requires devkitARM + libctru + citro2d + makerom
 #---------------------------------------------------------------------------------
 
 APP_TITLE    := 3DS Audio Player
@@ -77,20 +77,12 @@ $(OUTPUT).smdh:
 	smdhtool --create "$(APP_TITLE)" "$(APP_DESC)" "$(APP_AUTHOR)" \
 	    $(CTRULIB)/default_icon.png $@
 
-# Standard 3dsxtool compilation fixed (Removed broken --flags option)
 $(OUTPUT).3dsx: $(OUTPUT).elf $(OUTPUT).smdh
 	3dsxtool $< $@ --smdh=$(OUTPUT).smdh --romfs=$(ROMFS)
 
-# Rules for building system asset configurations for the CIA file target
-$(OUTPUT).bnr:
-	bannertool makebanner -i $(CTRULIB)/default_icon.png -a $(CTRULIB)/default_icon.png -o $@
-
-$(OUTPUT).icn:
-	bannertool makesmdh -s "$(APP_TITLE)" -l "$(APP_DESC)" -p "$(APP_AUTHOR)" -i $(CTRULIB)/default_icon.png -o $@
-
-# Final High Memory-Enabled CIA container generator
-$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).bnr $(OUTPUT).icn $(RSF)
-	makerom -f cia -o $@ -rsf $(RSF) -elf $(OUTPUT).elf -banner $(OUTPUT).bnr -icon $(OUTPUT).icn -romfs $(ROMFS)
+# Final High Memory-Enabled CIA container generator (Uses generic built-in banner)
+$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh $(RSF)
+	makerom -f cia -o $@ -rsf $(RSF) -elf $(OUTPUT).elf -icon $(OUTPUT).smdh -romfs $(ROMFS)
 
 clean:
-	rm -rf $(BUILD) $(OUTPUT).elf $(OUTPUT).3dsx $(OUTPUT).smdh $(OUTPUT).bnr $(OUTPUT).icn $(OUTPUT).cia
+	rm -rf $(BUILD) $(OUTPUT).elf $(OUTPUT).3dsx $(OUTPUT).smdh $(OUTPUT).cia
