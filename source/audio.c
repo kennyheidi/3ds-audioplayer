@@ -1,14 +1,14 @@
-// audio.c – drop‑in replacement for audio.h, tuned for old 3DS
-// Uses dr_mp3, dr_flac, dr_wav, stb_vorbis with double‑buffered NDSP playback.
+// audio.c – matches audio.h, fixed BUFFER_SIZE usage, tuned for old 3DS
 
 #include <3ds.h>
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "audio.h"
 
-// ---- dr_libs / stb_vorbis setup ----
+// ---- dr_libs implementations ----
 
 #define DR_MP3_IMPLEMENTATION
 #define DR_FLAC_IMPLEMENTATION
@@ -17,13 +17,14 @@
 #include "dr_flac.h"
 #include "dr_wav.h"
 
-// Minimal forward declarations for stb_vorbis (implementation is in vendor/stb_vorbis.c)
+// ---- stb_vorbis forward declarations (implementation is in vendor/stb_vorbis.c) ----
+
 typedef struct stb_vorbis stb_vorbis;
 
 typedef struct
 {
     unsigned int sample_rate;
-    int channels;
+    int          channels;
 } stb_vorbis_info;
 
 stb_vorbis*      stb_vorbis_open_filename(const char* path, int* error, const void* alloc_buffer);
@@ -32,14 +33,14 @@ stb_vorbis_info  stb_vorbis_get_info(stb_vorbis* f);
 unsigned int     stb_vorbis_stream_length_in_samples(stb_vorbis* f);
 int              stb_vorbis_get_samples_short_interleaved(stb_vorbis* f, int channels, short* buffer, int num_shorts);
 
-// ---- Internal decoder union ----
+// ---- Internal decoder state ----
 
 typedef struct {
     AudioFormat fmt;
     int         sampleRate;
     int         channels;
-    u64         totalFrames;   // for duration
-    u64         playedFrames;  // for position
+    u64         totalFrames;
+    u64         playedFrames;
 
     union {
         drmp3*      mp3;
@@ -49,8 +50,6 @@ typedef struct {
         void*       raw;
     } h;
 } DecoderState;
-
-// ---- Helpers ----
 
 static DecoderState* get_dec(AudioState* a) {
     return (DecoderState*)a->decoder;
@@ -120,6 +119,7 @@ static void update_ndsp_rate_and_volume(AudioState* a) {
     ndspChnSetMix(AUDIO_CHANNEL, mix);
 }
 
+// Read up to maxFrames frames (1 frame = samples for all channels)
 static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
     DecoderState* d = get_dec(a);
     if (!d || maxFrames <= 0) return 0;
@@ -127,18 +127,17 @@ static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
     int framesRead = 0;
 
     switch (d->fmt) {
-        case FMT_MP3: {
-            // dr_mp3 outputs frames as PCM16 via drmp3_read_pcm_frames_s16
+        case FMT_MP3:
             framesRead = (int)drmp3_read_pcm_frames_s16(d->h.mp3, maxFrames, out);
-        } break;
+            break;
 
-        case FMT_FLAC: {
+        case FMT_FLAC:
             framesRead = (int)drflac_read_pcm_frames_s16(d->h.flac, maxFrames, out);
-        } break;
+            break;
 
-        case FMT_WAV: {
+        case FMT_WAV:
             framesRead = (int)drwav_read_pcm_frames_s16(d->h.wav, maxFrames, out);
-        } break;
+            break;
 
         case FMT_OGG: {
             int samples = stb_vorbis_get_samples_short_interleaved(
@@ -147,7 +146,7 @@ static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
                 out,
                 maxFrames * d->channels
             );
-            framesRead = samples;
+            framesRead = samples; // returns samples per channel
         } break;
 
         default:
@@ -165,29 +164,46 @@ static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
     return framesRead;
 }
 
+// Fill one NDSP buffer; BUFFER_SIZE is nsamples per channel
 static void fill_buffer(AudioState* a, int bufIndex) {
     DecoderState* d = get_dec(a);
-    if (!d) {
-        a->wave_buf[bufIndex].nsamples = 0;
+    ndspWaveBuf*  wb = &a->wave_buf[bufIndex];
+
+    if (!d || a->status != AUDIO_PLAYING) {
+        wb->nsamples = 0;
         return;
     }
 
     s16* dst = a->pcm_buf[bufIndex];
-    int  maxFrames = BUFFER_SIZE; // already in frames (2 seconds at SAMPLE_RATE)
 
-    int frames = decoder_read_frames(a, dst, maxFrames);
-    if (frames <= 0) {
-        a->wave_buf[bufIndex].nsamples = 0;
+    // Decode in smaller chunks to avoid long stalls on old 3DS
+    const int CHUNK_FRAMES = 2048;
+    int framesRemaining    = BUFFER_SIZE; // nsamples per channel == frames
+    int totalFrames        = 0;
+
+    while (framesRemaining > 0) {
+        int toRead = framesRemaining;
+        if (toRead > CHUNK_FRAMES) toRead = CHUNK_FRAMES;
+
+        int got = decoder_read_frames(a, dst + totalFrames * d->channels, toRead);
+        if (got <= 0) break;
+
+        totalFrames     += got;
+        framesRemaining -= got;
+    }
+
+    if (totalFrames <= 0) {
+        wb->nsamples = 0;
         return;
     }
 
-    a->wave_buf[bufIndex].data_vaddr = dst;
-    a->wave_buf[bufIndex].nsamples   = frames;
-    a->wave_buf[bufIndex].looping    = false;
-    a->wave_buf[bufIndex].status     = NDSP_WBUF_FREE;
+    wb->data_vaddr = dst;
+    wb->nsamples   = totalFrames;          // nsamples per channel
+    wb->looping    = false;
+    wb->status     = NDSP_WBUF_FREE;
 
-    DSP_FlushDataCache(dst, frames * d->channels * sizeof(s16));
-    ndspChnWaveBufAdd(AUDIO_CHANNEL, &a->wave_buf[bufIndex]);
+    DSP_FlushDataCache(dst, totalFrames * d->channels * sizeof(s16));
+    ndspChnWaveBufAdd(AUDIO_CHANNEL, wb);
 }
 
 // ---- Public API ----
@@ -219,9 +235,10 @@ void audio_init(AudioState* a) {
     mix[1] = 1.0f;
     ndspChnSetMix(AUDIO_CHANNEL, mix);
 
-    // Allocate double buffers
+    // Allocate double buffers:
+    // BUFFER_SIZE = nsamples per channel, stereo => BUFFER_SIZE * 2 s16 entries
     for (int i = 0; i < 2; i++) {
-        a->pcm_buf[i] = (s16*)linearAlloc(BUFFER_SIZE * 2 * sizeof(s16)); // stereo
+        a->pcm_buf[i] = (s16*)linearAlloc(BUFFER_SIZE * 2 * sizeof(s16));
         memset(&a->wave_buf[i], 0, sizeof(ndspWaveBuf));
     }
     a->active_buf = 0;
@@ -256,10 +273,9 @@ void audio_shutdown(AudioState* a) {
 }
 
 void audio_stop(AudioState* a) {
-    if (!a->ndsp_available)
-        return;
+    if (a->ndsp_available)
+        ndspChnReset(AUDIO_CHANNEL);
 
-    ndspChnReset(AUDIO_CHANNEL);
     decoder_close(a);
 
     a->status   = AUDIO_STOPPED;
@@ -299,8 +315,8 @@ void audio_play(AudioState* a, const char* path) {
                 d->channels   = (int)mp3->channels;
                 d->totalFrames = drmp3_get_pcm_frame_count(mp3);
                 ok = true;
-            } else {
-                if (mp3) free(mp3);
+            } else if (mp3) {
+                free(mp3);
             }
         } break;
 
@@ -351,7 +367,6 @@ void audio_play(AudioState* a, const char* path) {
     a->decoder = d;
     a->format  = fmt;
 
-    // Duration in seconds
     if (d->sampleRate > 0 && d->totalFrames > 0) {
         a->duration = (double)d->totalFrames / (double)d->sampleRate;
     } else {
@@ -367,6 +382,118 @@ void audio_play(AudioState* a, const char* path) {
     ndspChnReset(AUDIO_CHANNEL);
     update_ndsp_rate_and_volume(a);
 
-    // Prime both buffers
     for (int i = 0; i < 2; i++) {
-        memset(&a->wave_buf[i], 0, sizeof
+        memset(&a->wave_buf[i], 0, sizeof(ndspWaveBuf));
+        fill_buffer(a, i);
+    }
+    a->active_buf = 0;
+
+    a->status = AUDIO_PLAYING;
+}
+
+void audio_toggle_pause(AudioState* a) {
+    if (!a->ndsp_available)
+        return;
+
+    if (a->status == AUDIO_PLAYING) {
+        a->status = AUDIO_PAUSED;
+        ndspChnSetPaused(AUDIO_CHANNEL, true);
+    } else if (a->status == AUDIO_PAUSED) {
+        a->status = AUDIO_PLAYING;
+        ndspChnSetPaused(AUDIO_CHANNEL, false);
+    }
+}
+
+void audio_update(AudioState* a) {
+    if (!a->ndsp_available)
+        return;
+    if (a->status != AUDIO_PLAYING)
+        return;
+
+    DecoderState* d = get_dec(a);
+    if (!d) return;
+
+    for (int i = 0; i < 2; i++) {
+        ndspWaveBuf* wb = &a->wave_buf[i];
+        if (wb->status == NDSP_WBUF_DONE) {
+            a->active_buf = i;
+            fill_buffer(a, i);
+            if (wb->nsamples == 0) {
+                a->status = AUDIO_STOPPED;
+                decoder_close(a);
+                ndspChnReset(AUDIO_CHANNEL);
+                break;
+            }
+        }
+    }
+}
+
+void audio_adjust_pitch(AudioState* a, float semitones) {
+    a->pitch += semitones;
+    if (a->pitch < PITCH_MIN) a->pitch = PITCH_MIN;
+    if (a->pitch > PITCH_MAX) a->pitch = PITCH_MAX;
+    update_ndsp_rate_and_volume(a);
+}
+
+void audio_adjust_speed(AudioState* a, float delta) {
+    a->speed += delta;
+    if (a->speed < SPEED_MIN) a->speed = SPEED_MIN;
+    if (a->speed > SPEED_MAX) a->speed = SPEED_MAX;
+    update_ndsp_rate_and_volume(a);
+}
+
+void audio_reset_fx(AudioState* a) {
+    a->pitch = 0.0f;
+    a->speed = 1.0f;
+    update_ndsp_rate_and_volume(a);
+}
+
+void audio_set_volume(AudioState* a, float vol) {
+    a->volume = vol;
+    if (a->volume < 0.0f) a->volume = 0.0f;
+    if (a->volume > 1.0f) a->volume = 1.0f;
+    update_ndsp_rate_and_volume(a);
+}
+
+float audio_progress(const AudioState* a) {
+    if (a->duration <= 0.0) return 0.0f;
+    float p = (float)(a->position / a->duration);
+    if (p < 0.0f) p = 0.0f;
+    if (p > 1.0f) p = 1.0f;
+    return p;
+}
+
+void audio_get_waveform(const AudioState* a, float* buf, int n) {
+    if (!buf || n <= 0) return;
+
+    const s16* src = NULL;
+    int        samples = 0;
+
+    int idx = a->active_buf;
+    const ndspWaveBuf* wb = &a->wave_buf[idx];
+
+    if (wb->nsamples > 0 && a->pcm_buf[idx]) {
+        src     = a->pcm_buf[idx];
+        samples = wb->nsamples; // nsamples per channel
+    }
+
+    if (!src || samples <= 0) {
+        memset(buf, 0, n * sizeof(float));
+        return;
+    }
+
+    int totalSamples = samples; // per channel
+    int step = (totalSamples > n) ? (totalSamples / n) : 1;
+    int outIndex = 0;
+
+    for (int i = 0; i < totalSamples && outIndex < n; i += step) {
+        float v = (float)src[i * 2 + 0] / 32768.0f; // left channel
+        if (v < -1.0f) v = -1.0f;
+        if (v >  1.0f) v =  1.0f;
+        buf[outIndex++] = v;
+    }
+
+    for (; outIndex < n; outIndex++) {
+        buf[outIndex] = 0.0f;
+    }
+}
