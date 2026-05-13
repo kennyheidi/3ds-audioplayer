@@ -197,10 +197,16 @@ void audio_play(AudioState* a, const char* path) {
             break;
         }
         case FMT_OGG: {
-            int error = 0;
-            stb_vorbis* dec = stb_vorbis_open_filename(path, &error, NULL);
-            ok = (dec != NULL && error == 0);
-            if (ok) { a->decoder = dec; a->duration = stb_vorbis_stream_length_in_seconds(dec); }
+            // Use stb_vorbis_open_file instead of stb_vorbis_open_filename
+            // to avoid STB_VORBIS_NO_STDIO issues on devkitARM 3DS headers
+            FILE* ogg_f = fopen(path, "rb");
+            if (ogg_f) {
+                int error = 0;
+                stb_vorbis* dec = stb_vorbis_open_file(ogg_f, 0, &error, NULL);
+                ok = (dec != NULL && error == 0);
+                if (ok) { a->decoder = dec; a->duration = stb_vorbis_stream_length_in_seconds(dec); }
+                else if (ogg_f) fclose(ogg_f);
+            }
             break;
         }
         default: break;
