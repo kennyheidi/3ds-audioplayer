@@ -1,458 +1,372 @@
-// audio.c — drop‑in replacement tuned for Old 3DS XL
-// Lag reduction: larger NDSP buffers, decode thread, PCM ring buffer, fixed‑point pitch/speed.
+// audio.c – drop‑in replacement for audio.h, tuned for old 3DS
+// Uses dr_mp3, dr_flac, dr_wav, stb_vorbis with double‑buffered NDSP playback.
 
 #include <3ds.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <math.h>
+#include <stdio.h>
 
 #include "audio.h"
-#include "filebrowser.h"
 
-// ---- Config ----
+// ---- dr_libs / stb_vorbis setup ----
 
-#define AUDIO_CHANNEL        0
-#define AUDIO_SAMPLE_RATE    44100
-#define AUDIO_FORMAT         NDSP_FORMAT_STEREO_PCM16
+#define DR_MP3_IMPLEMENTATION
+#define DR_FLAC_IMPLEMENTATION
+#define DR_WAV_IMPLEMENTATION
+#include "dr_mp3.h"
+#include "dr_flac.h"
+#include "dr_wav.h"
 
-// NDSP buffers (what the DSP pulls from)
-#define NDSP_BUFFER_SAMPLES  4096
-#define NDSP_NUM_BUFFERS     3
+// Minimal forward declarations for stb_vorbis (implementation is in vendor/stb_vorbis.c)
+typedef struct stb_vorbis stb_vorbis;
 
-// Ring buffer (decoded PCM ahead of time)
-#define PCM_RING_SAMPLES     (NDSP_BUFFER_SAMPLES * 8)
+typedef struct
+{
+    unsigned int sample_rate;
+    int channels;
+} stb_vorbis_info;
 
-// Fixed‑point for pitch/speed (16.16)
-#define FP_SHIFT             16
-#define FP_ONE               (1 << FP_SHIFT)
+stb_vorbis*      stb_vorbis_open_filename(const char* path, int* error, const void* alloc_buffer);
+void             stb_vorbis_close(stb_vorbis* f);
+stb_vorbis_info  stb_vorbis_get_info(stb_vorbis* f);
+unsigned int     stb_vorbis_stream_length_in_samples(stb_vorbis* f);
+int              stb_vorbis_get_samples_short_interleaved(stb_vorbis* f, int channels, short* buffer, int num_shorts);
 
-// ---- Types ----
+// ---- Internal decoder union ----
 
-typedef enum {
-    AUDIO_TYPE_NONE = 0,
-    AUDIO_TYPE_MP3,
-    AUDIO_TYPE_OGG,
-    AUDIO_TYPE_FLAC,
-    AUDIO_TYPE_WAV
-} AudioType;
+typedef struct {
+    AudioFormat fmt;
+    int         sampleRate;
+    int         channels;
+    u64         totalFrames;   // for duration
+    u64         playedFrames;  // for position
 
-// Forward‑declared decoder state structs (defined in your existing decoder .c/.h)
-typedef struct Mp3Decoder Mp3Decoder;
-typedef struct OggDecoder OggDecoder;
-typedef struct FlacDecoder FlacDecoder;
-typedef struct WavDecoder WavDecoder;
+    union {
+        drmp3*      mp3;
+        drflac*     flac;
+        drwav*      wav;
+        stb_vorbis* ogg;
+        void*       raw;
+    } h;
+} DecoderState;
 
-// ---- External decoder API (must match your existing repo) ----
-// You already have these in your project; keep signatures identical.
+// ---- Helpers ----
 
-extern Mp3Decoder* mp3_open(const char* path, int* sampleRate, int* channels);
-extern int         mp3_read(Mp3Decoder* dec, int16_t* out, int frames);
-extern void        mp3_close(Mp3Decoder* dec);
-
-extern OggDecoder* ogg_open(const char* path, int* sampleRate, int* channels);
-extern int         ogg_read(OggDecoder* dec, int16_t* out, int frames);
-extern void        ogg_close(OggDecoder* dec);
-
-extern FlacDecoder* flac_open(const char* path, int* sampleRate, int* channels);
-extern int          flac_read(FlacDecoder* dec, int16_t* out, int frames);
-extern void         flac_close(FlacDecoder* dec);
-
-extern WavDecoder* wav_open(const char* path, int* sampleRate, int* channels);
-extern int         wav_read(WavDecoder* dec, int16_t* out, int frames);
-extern void        wav_close(WavDecoder* dec);
-
-// ---- Global playback state ----
-
-static volatile bool g_audioInitialized = false;
-static volatile bool g_playing          = false;
-static volatile bool g_paused           = false;
-static volatile bool g_stopRequested    = false;
-
-// Pitch in semitones, speed as 16.16 fixed‑point multiplier
-static volatile int  g_pitchSemitones   = 0;        // −12..+12
-static volatile s32  g_speedFP          = FP_ONE;   // 0.25×..4.0×
-
-static AudioType     g_audioType        = AUDIO_TYPE_NONE;
-static Mp3Decoder*   g_mp3              = NULL;
-static OggDecoder*   g_ogg              = NULL;
-static FlacDecoder*  g_flac             = NULL;
-static WavDecoder*   g_wav              = NULL;
-static int           g_srcSampleRate    = AUDIO_SAMPLE_RATE;
-static int           g_srcChannels      = 2;
-
-// ---- NDSP buffers ----
-
-static ndspWaveBuf   g_waveBuf[NDSP_NUM_BUFFERS];
-static int16_t       g_ndspBuffers[NDSP_NUM_BUFFERS][NDSP_BUFFER_SAMPLES * 2]; // stereo
-
-// ---- PCM ring buffer (decoded ahead) ----
-
-static int16_t       g_pcmRing[PCM_RING_SAMPLES * 2]; // stereo
-static volatile u32  g_pcmWritePos = 0;               // in frames
-static volatile u32  g_pcmReadPos  = 0;               // in frames
-
-// ---- Decode thread ----
-
-static Thread        g_decodeThread   = 0;
-static volatile bool g_decodeRunning  = false;
-
-// ---- Utility ----
-
-static inline u32 ring_capacity_frames(void) {
-    return PCM_RING_SAMPLES;
+static DecoderState* get_dec(AudioState* a) {
+    return (DecoderState*)a->decoder;
 }
 
-static inline u32 ring_used_frames(void) {
-    u32 w = g_pcmWritePos;
-    u32 r = g_pcmReadPos;
-    if (w >= r) return w - r;
-    return ring_capacity_frames() - (r - w);
-}
+static void decoder_close(AudioState* a) {
+    DecoderState* d = get_dec(a);
+    if (!d) return;
 
-static inline u32 ring_free_frames(void) {
-    return ring_capacity_frames() - ring_used_frames() - 1;
-}
-
-static void ring_write_frames(const int16_t* src, u32 frames) {
-    u32 cap = ring_capacity_frames();
-    for (u32 i = 0; i < frames; i++) {
-        u32 idx = (g_pcmWritePos + i) % cap;
-        g_pcmRing[idx * 2 + 0] = src[i * 2 + 0];
-        g_pcmRing[idx * 2 + 1] = src[i * 2 + 1];
-    }
-    g_pcmWritePos = (g_pcmWritePos + frames) % cap;
-}
-
-static u32 ring_read_frames(int16_t* dst, u32 frames) {
-    u32 available = ring_used_frames();
-    if (frames > available) frames = available;
-    u32 cap = ring_capacity_frames();
-    for (u32 i = 0; i < frames; i++) {
-        u32 idx = (g_pcmReadPos + i) % cap;
-        dst[i * 2 + 0] = g_pcmRing[idx * 2 + 0];
-        dst[i * 2 + 1] = g_pcmRing[idx * 2 + 1];
-    }
-    g_pcmReadPos = (g_pcmReadPos + frames) % cap;
-    return frames;
-}
-
-// ---- Decoder dispatch ----
-
-static int decoder_read_frames(int16_t* out, int frames) {
-    if (!g_playing || g_stopRequested) return 0;
-
-    switch (g_audioType) {
-        case AUDIO_TYPE_MP3:
-            return mp3_read(g_mp3, out, frames);
-        case AUDIO_TYPE_OGG:
-            return ogg_read(g_ogg, out, frames);
-        case AUDIO_TYPE_FLAC:
-            return flac_read(g_flac, out, frames);
-        case AUDIO_TYPE_WAV:
-            return wav_read(g_wav, out, frames);
-        default:
-            return 0;
-    }
-}
-
-static void decoder_close(void) {
-    switch (g_audioType) {
-        case AUDIO_TYPE_MP3:
-            if (g_mp3) mp3_close(g_mp3);
-            g_mp3 = NULL;
+    switch (d->fmt) {
+        case FMT_MP3:
+            if (d->h.mp3) drmp3_close(d->h.mp3);
             break;
-        case AUDIO_TYPE_OGG:
-            if (g_ogg) ogg_close(g_ogg);
-            g_ogg = NULL;
+        case FMT_FLAC:
+            if (d->h.flac) drflac_close(d->h.flac);
             break;
-        case AUDIO_TYPE_FLAC:
-            if (g_flac) flac_close(g_flac);
-            g_flac = NULL;
+        case FMT_WAV:
+            if (d->h.wav) drwav_close(d->h.wav);
             break;
-        case AUDIO_TYPE_WAV:
-            if (g_wav) wav_close(g_wav);
-            g_wav = NULL;
+        case FMT_OGG:
+            if (d->h.ogg) stb_vorbis_close(d->h.ogg);
             break;
         default:
             break;
     }
-    g_audioType = AUDIO_TYPE_NONE;
+
+    free(d);
+    a->decoder = NULL;
+    a->format  = FMT_UNKNOWN;
 }
 
-// ---- Pitch / speed ----
+static AudioFormat detect_format(const char* path) {
+    const char* dot = strrchr(path, '.');
+    if (!dot) return FMT_UNKNOWN;
+    dot++;
 
-static void update_ndsp_pitch_speed(void) {
-    // Pitch in semitones → frequency ratio
-    float pitchRatio = powf(2.0f, (float)g_pitchSemitones / 12.0f);
+    if (!strcasecmp(dot, "mp3"))  return FMT_MP3;
+    if (!strcasecmp(dot, "flac")) return FMT_FLAC;
+    if (!strcasecmp(dot, "wav"))  return FMT_WAV;
+    if (!strcasecmp(dot, "ogg"))  return FMT_OGG;
 
-    // Speed is fixed‑point multiplier
-    float speedRatio = (float)g_speedFP / (float)FP_ONE;
-
-    float totalRatio = pitchRatio * speedRatio;
-    float newRate    = (float)AUDIO_SAMPLE_RATE * totalRatio;
-
-    ndspChnSetRate(AUDIO_CHANNEL, newRate);
+    return FMT_UNKNOWN;
 }
 
-// ---- Decode thread func ----
+static void update_ndsp_rate_and_volume(AudioState* a) {
+    if (!a->ndsp_available) return;
 
-static void decode_thread_func(void* arg) {
-    (void)arg;
+    DecoderState* d = get_dec(a);
+    int baseRate = (d && d->sampleRate > 0) ? d->sampleRate : SAMPLE_RATE;
 
-    const int tempFrames = 1024;
-    static int16_t tempBuf[1024 * 2];
+    float pitchRatio = powf(2.0f, a->pitch / 12.0f);
+    float speedRatio = a->speed;
+    float rate       = (float)baseRate * pitchRatio * speedRatio;
 
-    while (g_decodeRunning) {
-        if (!g_playing || g_paused || g_stopRequested) {
-            svcSleepThread(5 * 1000 * 1000); // 5 ms
-            continue;
-        }
+    if (rate < 8000.0f)  rate = 8000.0f;
+    if (rate > 96000.0f) rate = 96000.0f;
 
-        // Fill ring buffer while there's space
-        u32 freeFrames = ring_free_frames();
-        if (freeFrames < (u32)tempFrames) {
-            // Not enough space, chill a bit
-            svcSleepThread(2 * 1000 * 1000); // 2 ms
-            continue;
-        }
+    ndspChnSetRate(AUDIO_CHANNEL, rate);
 
-        int got = decoder_read_frames(tempBuf, tempFrames);
-        if (got <= 0) {
-            // End of file or error
-            g_stopRequested = true;
-            g_playing       = false;
-            continue;
-        }
+    float mix[12];
+    memset(mix, 0, sizeof(mix));
+    float v = a->volume;
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    mix[0] = v;
+    mix[1] = v;
+    ndspChnSetMix(AUDIO_CHANNEL, mix);
+}
 
-        ring_write_frames(tempBuf, (u32)got);
+static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
+    DecoderState* d = get_dec(a);
+    if (!d || maxFrames <= 0) return 0;
+
+    int framesRead = 0;
+
+    switch (d->fmt) {
+        case FMT_MP3: {
+            // dr_mp3 outputs frames as PCM16 via drmp3_read_pcm_frames_s16
+            framesRead = (int)drmp3_read_pcm_frames_s16(d->h.mp3, maxFrames, out);
+        } break;
+
+        case FMT_FLAC: {
+            framesRead = (int)drflac_read_pcm_frames_s16(d->h.flac, maxFrames, out);
+        } break;
+
+        case FMT_WAV: {
+            framesRead = (int)drwav_read_pcm_frames_s16(d->h.wav, maxFrames, out);
+        } break;
+
+        case FMT_OGG: {
+            int samples = stb_vorbis_get_samples_short_interleaved(
+                d->h.ogg,
+                d->channels,
+                out,
+                maxFrames * d->channels
+            );
+            framesRead = samples;
+        } break;
+
+        default:
+            framesRead = 0;
+            break;
     }
 
-    threadExit(0);
+    if (framesRead > 0) {
+        d->playedFrames += (u64)framesRead;
+        a->position = (d->sampleRate > 0)
+                      ? (double)d->playedFrames / (double)d->sampleRate
+                      : 0.0;
+    }
+
+    return framesRead;
 }
 
-// ---- NDSP callback / refill ----
-
-static void refill_wavebuf(ndspWaveBuf* buf) {
-    if (!g_playing || g_stopRequested) {
-        memset(buf->data_vaddr, 0, NDSP_BUFFER_SAMPLES * 2 * sizeof(int16_t));
-        buf->nsamples = NDSP_BUFFER_SAMPLES;
+static void fill_buffer(AudioState* a, int bufIndex) {
+    DecoderState* d = get_dec(a);
+    if (!d) {
+        a->wave_buf[bufIndex].nsamples = 0;
         return;
     }
 
-    int16_t* dst = (int16_t*)buf->data_vaddr;
-    u32 got = ring_read_frames(dst, NDSP_BUFFER_SAMPLES);
+    s16* dst = a->pcm_buf[bufIndex];
+    int  maxFrames = BUFFER_SIZE; // already in frames (2 seconds at SAMPLE_RATE)
 
-    if (got < NDSP_BUFFER_SAMPLES) {
-        // Underrun: pad with zeros
-        memset(dst + got * 2, 0, (NDSP_BUFFER_SAMPLES - got) * 2 * sizeof(int16_t));
+    int frames = decoder_read_frames(a, dst, maxFrames);
+    if (frames <= 0) {
+        a->wave_buf[bufIndex].nsamples = 0;
+        return;
     }
 
-    buf->nsamples = NDSP_BUFFER_SAMPLES;
-}
+    a->wave_buf[bufIndex].data_vaddr = dst;
+    a->wave_buf[bufIndex].nsamples   = frames;
+    a->wave_buf[bufIndex].looping    = false;
+    a->wave_buf[bufIndex].status     = NDSP_WBUF_FREE;
 
-static void audio_frame_callback(void* arg) {
-    (void)arg;
-
-    for (int i = 0; i < NDSP_NUM_BUFFERS; i++) {
-        ndspWaveBuf* wb = &g_waveBuf[i];
-        if (wb->status == NDSP_WBUF_DONE) {
-            refill_wavebuf(wb);
-            ndspChnWaveBufAdd(AUDIO_CHANNEL, wb);
-        }
-    }
+    DSP_FlushDataCache(dst, frames * d->channels * sizeof(s16));
+    ndspChnWaveBufAdd(AUDIO_CHANNEL, &a->wave_buf[bufIndex]);
 }
 
 // ---- Public API ----
 
-bool audio_init(void) {
-    if (g_audioInitialized) return true;
+void audio_init(AudioState* a) {
+    memset(a, 0, sizeof(*a));
 
-    if (ndspInit() != 0) {
-        return false;
-    }
+    a->status = AUDIO_STOPPED;
+    a->format = FMT_UNKNOWN;
+    a->pitch  = 0.0f;
+    a->speed  = 1.0f;
+    a->volume = 1.0f;
+    a->duration = 0.0;
+    a->position = 0.0;
+
+    a->ndsp_available = (ndspInit() == 0);
+    if (!a->ndsp_available)
+        return;
 
     ndspSetOutputMode(NDSP_OUTPUT_STEREO);
     ndspChnReset(AUDIO_CHANNEL);
     ndspChnSetInterp(AUDIO_CHANNEL, NDSP_INTERP_POLYPHASE);
-    ndspChnSetRate(AUDIO_CHANNEL, AUDIO_SAMPLE_RATE);
-    ndspChnSetFormat(AUDIO_CHANNEL, AUDIO_FORMAT);
+    ndspChnSetFormat(AUDIO_CHANNEL, NDSP_FORMAT_STEREO_PCM16);
+    ndspChnSetRate(AUDIO_CHANNEL, SAMPLE_RATE);
 
-    // Identity mix (L→L, R→R)
     float mix[12];
     memset(mix, 0, sizeof(mix));
-    mix[0] = 1.0f; // L
-    mix[1] = 1.0f; // R
+    mix[0] = 1.0f;
+    mix[1] = 1.0f;
     ndspChnSetMix(AUDIO_CHANNEL, mix);
 
-    // Setup wave buffers
-    memset(g_waveBuf, 0, sizeof(g_waveBuf));
-    for (int i = 0; i < NDSP_NUM_BUFFERS; i++) {
-        g_waveBuf[i].data_vaddr = g_ndspBuffers[i];
-        g_waveBuf[i].nsamples   = NDSP_BUFFER_SAMPLES;
-        g_waveBuf[i].looping    = false;
-        DSP_FlushDataCache(g_ndspBuffers[i], NDSP_BUFFER_SAMPLES * 2 * sizeof(int16_t));
-        ndspChnWaveBufAdd(AUDIO_CHANNEL, &g_waveBuf[i]);
+    // Allocate double buffers
+    for (int i = 0; i < 2; i++) {
+        a->pcm_buf[i] = (s16*)linearAlloc(BUFFER_SIZE * 2 * sizeof(s16)); // stereo
+        memset(&a->wave_buf[i], 0, sizeof(ndspWaveBuf));
     }
+    a->active_buf = 0;
 
-    // Set callback
-    ndspSetCallback(audio_frame_callback, NULL);
+    // Optional processing buffer (same size as one PCM buffer)
+    a->process_buf_size = BUFFER_SIZE * 2;
+    a->process_buf      = (s16*)linearAlloc(a->process_buf_size * sizeof(s16));
 
-    // Start decode thread
-    g_decodeRunning = true;
-    g_decodeThread = threadCreate(
-        decode_thread_func,
-        NULL,
-        32 * 1024,
-        0x18,
-        -2,
-        false
-    );
-
-    g_audioInitialized = true;
-    return true;
+    update_ndsp_rate_and_volume(a);
 }
 
-void audio_exit(void) {
-    if (!g_audioInitialized) return;
-
-    g_stopRequested = true;
-    g_playing       = false;
-
-    g_decodeRunning = false;
-    if (g_decodeThread) {
-        threadJoin(g_decodeThread, U64_MAX);
-        threadFree(g_decodeThread);
-        g_decodeThread = 0;
+void audio_shutdown(AudioState* a) {
+    if (a->ndsp_available) {
+        ndspChnReset(AUDIO_CHANNEL);
+        ndspExit();
+        a->ndsp_available = false;
     }
 
-    decoder_close();
+    decoder_close(a);
 
-    ndspSetCallback(NULL, NULL);
+    for (int i = 0; i < 2; i++) {
+        if (a->pcm_buf[i]) {
+            linearFree(a->pcm_buf[i]);
+            a->pcm_buf[i] = NULL;
+        }
+    }
+
+    if (a->process_buf) {
+        linearFree(a->process_buf);
+        a->process_buf = NULL;
+    }
+}
+
+void audio_stop(AudioState* a) {
+    if (!a->ndsp_available)
+        return;
+
     ndspChnReset(AUDIO_CHANNEL);
-    ndspExit();
+    decoder_close(a);
 
-    g_audioInitialized = false;
+    a->status   = AUDIO_STOPPED;
+    a->position = 0.0;
+    a->duration = 0.0;
+    a->current_file[0]  = '\0';
+    a->current_title[0] = '\0';
 }
 
-static AudioType detect_type_from_extension(const char* path) {
-    const char* dot = strrchr(path, '.');
-    if (!dot) return AUDIO_TYPE_NONE;
-    dot++;
+void audio_play(AudioState* a, const char* path) {
+    if (!a->ndsp_available || !path)
+        return;
 
-    if (!strcasecmp(dot, "mp3"))  return AUDIO_TYPE_MP3;
-    if (!strcasecmp(dot, "ogg"))  return AUDIO_TYPE_OGG;
-    if (!strcasecmp(dot, "flac")) return AUDIO_TYPE_FLAC;
-    if (!strcasecmp(dot, "wav"))  return AUDIO_TYPE_WAV;
+    audio_stop(a);
 
-    return AUDIO_TYPE_NONE;
-}
+    AudioFormat fmt = detect_format(path);
+    if (fmt == FMT_UNKNOWN)
+        return;
 
-bool audio_play_file(const char* path) {
-    if (!g_audioInitialized && !audio_init()) return false;
+    DecoderState* d = (DecoderState*)calloc(1, sizeof(DecoderState));
+    if (!d) return;
 
-    audio_stop();
+    d->fmt         = fmt;
+    d->sampleRate  = SAMPLE_RATE;
+    d->channels    = 2;
+    d->totalFrames = 0;
+    d->playedFrames = 0;
 
-    g_audioType = detect_type_from_extension(path);
-    if (g_audioType == AUDIO_TYPE_NONE) {
-        return false;
-    }
+    bool ok = false;
 
-    g_srcSampleRate = AUDIO_SAMPLE_RATE;
-    g_srcChannels   = 2;
+    switch (fmt) {
+        case FMT_MP3: {
+            drmp3* mp3 = (drmp3*)malloc(sizeof(drmp3));
+            if (mp3 && drmp3_init_file(mp3, path, NULL)) {
+                d->h.mp3      = mp3;
+                d->sampleRate = (int)mp3->sampleRate;
+                d->channels   = (int)mp3->channels;
+                d->totalFrames = drmp3_get_pcm_frame_count(mp3);
+                ok = true;
+            } else {
+                if (mp3) free(mp3);
+            }
+        } break;
 
-    switch (g_audioType) {
-        case AUDIO_TYPE_MP3:
-            g_mp3 = mp3_open(path, &g_srcSampleRate, &g_srcChannels);
-            if (!g_mp3) return false;
-            break;
-        case AUDIO_TYPE_OGG:
-            g_ogg = ogg_open(path, &g_srcSampleRate, &g_srcChannels);
-            if (!g_ogg) return false;
-            break;
-        case AUDIO_TYPE_FLAC:
-            g_flac = flac_open(path, &g_srcSampleRate, &g_srcChannels);
-            if (!g_flac) return false;
-            break;
-        case AUDIO_TYPE_WAV:
-            g_wav = wav_open(path, &g_srcSampleRate, &g_srcChannels);
-            if (!g_wav) return false;
-            break;
+        case FMT_FLAC: {
+            drflac* flac = drflac_open_file(path, NULL);
+            if (flac) {
+                d->h.flac      = flac;
+                d->sampleRate  = (int)flac->sampleRate;
+                d->channels    = (int)flac->channels;
+                d->totalFrames = flac->totalPCMFrameCount;
+                ok = true;
+            }
+        } break;
+
+        case FMT_WAV: {
+            drwav* wav = drwav_open_file(path, NULL);
+            if (wav) {
+                d->h.wav       = wav;
+                d->sampleRate  = (int)wav->sampleRate;
+                d->channels    = (int)wav->channels;
+                d->totalFrames = wav->totalPCMFrameCount;
+                ok = true;
+            }
+        } break;
+
+        case FMT_OGG: {
+            int err = 0;
+            stb_vorbis* ogg = stb_vorbis_open_filename(path, &err, NULL);
+            if (ogg && err == 0) {
+                stb_vorbis_info info = stb_vorbis_get_info(ogg);
+                d->h.ogg       = ogg;
+                d->sampleRate  = (int)info.sample_rate;
+                d->channels    = (int)info.channels;
+                d->totalFrames = stb_vorbis_stream_length_in_samples(ogg);
+                ok = true;
+            }
+        } break;
+
         default:
-            return false;
+            break;
     }
 
-    // Reset ring buffer
-    g_pcmWritePos = 0;
-    g_pcmReadPos  = 0;
-
-    g_pitchSemitones = 0;
-    g_speedFP        = FP_ONE;
-    update_ndsp_pitch_speed();
-
-    g_stopRequested = false;
-    g_paused        = false;
-    g_playing       = true;
-
-    // Prime NDSP buffers immediately
-    for (int i = 0; i < NDSP_NUM_BUFFERS; i++) {
-        refill_wavebuf(&g_waveBuf[i]);
-        DSP_FlushDataCache(g_ndspBuffers[i], NDSP_BUFFER_SAMPLES * 2 * sizeof(int16_t));
-        ndspChnWaveBufAdd(AUDIO_CHANNEL, &g_waveBuf[i]);
+    if (!ok) {
+        free(d);
+        return;
     }
 
-    return true;
-}
+    a->decoder = d;
+    a->format  = fmt;
 
-void audio_stop(void) {
-    if (!g_audioInitialized) return;
+    // Duration in seconds
+    if (d->sampleRate > 0 && d->totalFrames > 0) {
+        a->duration = (double)d->totalFrames / (double)d->sampleRate;
+    } else {
+        a->duration = 0.0;
+    }
+    a->position = 0.0;
 
-    g_stopRequested = true;
-    g_playing       = false;
-    g_paused        = false;
+    strncpy(a->current_file, path, sizeof(a->current_file) - 1);
+    a->current_file[sizeof(a->current_file) - 1] = '\0';
+    strncpy(a->current_title, path, sizeof(a->current_title) - 1);
+    a->current_title[sizeof(a->current_title) - 1] = '\0';
 
     ndspChnReset(AUDIO_CHANNEL);
-    decoder_close();
+    update_ndsp_rate_and_volume(a);
 
-    // Clear ring buffer
-    g_pcmWritePos = 0;
-    g_pcmReadPos  = 0;
-}
-
-void audio_pause_toggle(void) {
-    if (!g_playing) return;
-    g_paused = !g_paused;
-}
-
-bool audio_is_playing(void) {
-    return g_playing && !g_paused;
-}
-
-bool audio_is_paused(void) {
-    return g_paused;
-}
-
-// Pitch: −12..+12 semitones
-void audio_pitch_step(int deltaSemitones) {
-    int newPitch = g_pitchSemitones + deltaSemitones;
-    if (newPitch < -12) newPitch = -12;
-    if (newPitch >  12) newPitch =  12;
-    g_pitchSemitones = newPitch;
-    update_ndsp_pitch_speed();
-}
-
-// Speed: multiply by factor (0.25×..4.0×)
-void audio_speed_step(float factor) {
-    float current = (float)g_speedFP / (float)FP_ONE;
-    current *= factor;
-    if (current < 0.25f) current = 0.25f;
-    if (current > 4.0f)  current = 4.0f;
-    g_speedFP = (s32)(current * (float)FP_ONE);
-    update_ndsp_pitch_speed();
-}
-
-void audio_reset_pitch_speed(void) {
-    g_pitchSemitones = 0;
-    g_speedFP        = FP_ONE;
-    update_ndsp_pitch_speed();
-}
+    // Prime both buffers
+    for (int i = 0; i < 2; i++) {
+        memset(&a->wave_buf[i], 0, sizeof
