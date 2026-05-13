@@ -16,12 +16,19 @@ SystemControlInfo:
   StackSize:     0x100000
 
 AccessControlInfo:
-  # CoreVersion is mandatory in recent makerom versions
-  CoreVersion:   2
+  # Mandatory fields for this version of makerom
+  CoreVersion:       2
+  Priority:          16
+  IdealProcessor:    0
+  MemoryType:        Application
+  HandleTableSize:   0x200
   
-  # Hardware/Memory settings
-  SystemMode:    96MB
-
+  # Hardware and Memory permissions
+  SystemMode:        96MB
+  New3dsSystemMode:  124MB
+  New3dsCpuSpeed:    804MHz
+  
   FileSystemAccess:
     - SdmcRw
+  
   UseOtherVariationSaveData: false
