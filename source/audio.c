@@ -247,13 +247,19 @@ void audio_toggle_pause(AudioState* a) {
 }
 
 /*
- * audio_update — fill ALL free wave buffers, not just one.
+ * audio_update — scan all buffers and refill any that the DSP has finished.
  *
- * OLD 3DS KEY FIX: the original returned after filling one buffer.
- * If the main loop ran slow (UI + decode on the same core), we'd
- * miss a buffer refill and the DSP would stutter. Now we loop and
- * fill every free slot — on a normal frame that's 0-1 buffer, but
- * on startup or after a slow frame we recover immediately.
+ * Correct buffer lifecycle:
+ *   FREE  → we fill it and call ndspChnWaveBufAdd()
+ *   QUEUED → DSP is waiting to play it (do not touch)
+ *   PLAYING → DSP is currently playing it (do not touch)
+ *   DONE  → DSP finished, safe to refill
+ *
+ * We must NOT set wb->status ourselves before adding — NDSP owns that
+ * field once the buffer is queued. We just check FREE/DONE before filling.
+ *
+ * active_buf tracks which buffer slot to fill next in round-robin order,
+ * advancing only when we actually fill a buffer (not every loop iteration).
  */
 void audio_update(AudioState* a) {
     if (a->status != AUDIO_PLAYING) return;
@@ -261,16 +267,18 @@ void audio_update(AudioState* a) {
 
     float pitch_ratio = powf(2.0f, a->pitch / 12.0f);
 
+    // Update playback rate once per call, not per buffer
+    ndspChnSetRate(AUDIO_CHANNEL, (float)(SAMPLE_RATE * a->speed));
+
     for (int b = 0; b < NUM_BUFS; b++) {
-        // Round-robin through buffers
         int buf_idx = (a->active_buf + b) % NUM_BUFS;
         ndspWaveBuf* wb = &a->wave_buf[buf_idx];
 
-        // Only fill buffers that the DSP has finished consuming
+        // Only refill buffers the DSP has finished with
         if (wb->status != NDSP_WBUF_FREE && wb->status != NDSP_WBUF_DONE)
             continue;
 
-        int frames_needed  = FRAMES_PER_BUF;
+        int frames_needed   = FRAMES_PER_BUF;
         int decode_frames_n = (int)((float)frames_needed / pitch_ratio) + 4;
         if (decode_frames_n * 2 > a->process_buf_size)
             decode_frames_n = a->process_buf_size / 2;
@@ -278,26 +286,27 @@ void audio_update(AudioState* a) {
         int decoded = decode_frames(a, a->process_buf, decode_frames_n);
 
         if (decoded <= 0) {
+            // End of file — let queued buffers finish playing before stopping
             a->status   = AUDIO_STOPPED;
             a->position = a->duration;
             return;
         }
 
-        s16* dst       = a->pcm_buf[buf_idx];
+        s16* dst        = a->pcm_buf[buf_idx];
         int  out_frames = resample_stereo(a->process_buf, decoded,
                                           dst, frames_needed, pitch_ratio);
 
         a->position += (double)decoded / SAMPLE_RATE;
 
-        ndspChnSetRate(AUDIO_CHANNEL, (float)(SAMPLE_RATE * a->speed));
+        // Flush cache before handing buffer to DSP
+        DSP_FlushDataCache(dst, out_frames * 2 * sizeof(s16));
 
+        // Set up wavebuf — do NOT set wb->status here, NDSP manages it
         wb->data_vaddr = dst;
         wb->nsamples   = out_frames * 2;
-        wb->status     = NDSP_WBUF_FREE;
-        DSP_FlushDataCache(dst, out_frames * 2 * sizeof(s16));
         ndspChnWaveBufAdd(AUDIO_CHANNEL, wb);
 
-        // Advance the active buffer pointer
+        // Advance active_buf only when we actually filled a slot
         a->active_buf = (buf_idx + 1) % NUM_BUFS;
     }
 }
