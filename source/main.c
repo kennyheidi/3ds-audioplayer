@@ -56,6 +56,43 @@
 u32 __stacksize__ = 0x80000; /* 512 KB */
 
 /* ------------------------------------------------------------------ */
+/*  Sleep-mode hook — keeps audio playing with lid closed              */
+/*                                                                      */
+/*  When the lid closes the OS fires APT_HOOK_SLEEP.  Without a hook   */
+/*  the app suspends and NDSP stops.  We register a callback that:     */
+/*    - On SLEEP:  pauses the screen (saves power) but leaves NDSP     */
+/*                 running so music continues                           */
+/*    - On WAKEUP: resumes screen rendering                            */
+/*                                                                      */
+/*  aptSetSleepAllowed(true) tells the OS we consent to sleep events.  */
+/*  The hook then intercepts them instead of letting the OS suspend us. */
+/* ------------------------------------------------------------------ */
+
+static aptHookCookie s_sleep_hook;
+static volatile bool s_sleeping = false;
+
+static void sleep_hook_cb(APT_HookType hook, void* param) {
+    (void)param;
+    switch (hook) {
+        case APTHOOK_ONSLEEP:
+            /* Lid closed — stop rendering, keep NDSP running */
+            s_sleeping = true;
+            /* Dim backlight to save battery */
+            GSPLCD_PowerOffBacklight(GSPLCD_SCREEN_BOTH);
+            break;
+
+        case APTHOOK_ONWAKEUP:
+            /* Lid opened — resume rendering */
+            s_sleeping = false;
+            GSPLCD_PowerOnBacklight(GSPLCD_SCREEN_BOTH);
+            break;
+
+        default:
+            break;
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Simple C2D error screen — used instead of printf when NDSP fails   */
 /* ------------------------------------------------------------------ */
 
@@ -123,6 +160,7 @@ int main(void) {
      * will block but NDSP stays active.
      */
     aptSetSleepAllowed(true);
+    aptHook(&s_sleep_hook, sleep_hook_cb, NULL);
 
     C3D_RenderTarget* top    = C2D_CreateScreenTarget(GFX_TOP,    GFX_LEFT);
     C3D_RenderTarget* bottom = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
@@ -204,9 +242,12 @@ int main(void) {
             /* --- Audio decode (every frame @ 60 Hz — NDSP needs frequent refills) --- */
             if (ndsp_ok) audio_update(&audio);
 
-            /* --- Render (every other frame = 30 Hz) --- */
+            /* --- Render (every other frame = 30 Hz, skipped while sleeping) --- */
             render_tick ^= 1;
-            if (render_tick == 0) {
+            if (s_sleeping) {
+                /* Lid is closed — skip all rendering, just keep audio going */
+                svcSleepThread(16666667LL); /* ~16ms = 60Hz pacing */
+            } else if (render_tick == 0) {
                 C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
                 C2D_TargetClear(top,    C2D_Color32(0x12, 0x12, 0x1E, 0xFF));
                 C2D_SceneBegin(top);
