@@ -26,13 +26,13 @@ jobs:
             cmake wget unzip git ca-certificates build-essential libgmp-dev python3
 
       # ---------------------------------------------------------
-      # makerom (build from source, no portlibs, no pacman)
+      # makerom (build from source, static libs, no pacman)
       # ---------------------------------------------------------
       - name: Build makerom
         run: |
           git clone --recursive --depth 1 https://github.com/profi200/Project_CTR /tmp/project_ctr
           cd /tmp/project_ctr/makerom
-          make USE_SYSTEM_LIBS=0
+          make -j4 USE_SYSTEM_LIBS=0 NO_PKGCONFIG=1
           mv makerom /opt/devkitpro/tools/bin/makerom
           chmod +x /opt/devkitpro/tools/bin/makerom
 
