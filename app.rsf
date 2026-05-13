@@ -1,0 +1,12 @@
+TitleInfo:
+  Category: Application
+  UniqueId: 0xF81A2 # Replace with a random hex value between 0x00000 -> 0xFFFFF
+
+SystemControlInfo:
+  SaveDataSize: 0KB
+  MemoryType: Application # Enables high memory layout (80MB O3DS / 124MB N3DS)
+
+BasicInfo:
+  Title: 3DS Audio Player
+  Company: You
+  ProductCode: CTR-P-AUDP
