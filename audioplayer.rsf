@@ -16,20 +16,22 @@ SystemControlInfo:
   StackSize:     0x100000
 
 AccessControlInfo:
-  # CoreVersion & scheduling (Mandatory)
+  # Mandatory scheduling settings
   CoreVersion:       2
-  Priority:          0x10
+  Priority:          16
   IdealProcessor:    0
   MemoryType:        Application
-  HandleTableSize:   0x200
-  
-  # Hardware and Memory permissions (Fixed Key Names)
+  HandleTableSize:   512
+
+  # Hardware / New 3DS settings
   SystemMode:        96MB
   SystemModeExt:     124MB
   CpuSpeed:          804MHz
   EnableL2Cache:     true
-  
+
+  # The fix for your current error:
   FileSystemAccess:
-    - SdmcRw
-  
+    - DirectSdmc
+    - DirectSdmcWrite
+
   UseOtherVariationSaveData: false
