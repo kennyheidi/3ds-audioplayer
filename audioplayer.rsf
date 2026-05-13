@@ -19,18 +19,13 @@ SystemControlInfo:
   # Old 3DS extended memory (requires Luma game patching)
   SystemMode:        96MB
 
-  # Full 124MB APPLICATION memory on New 3DS
-  New3DSSystemMode:  124MB
-
 AccessControlInfo:
   FileSystemAccess:
     - SdmcRw
 
-  # New 3DS CPU + L2 cache
+  # These New 3DS fields are safe to include but ignored on old 3DS
   IdealProcessor: 0
   AffinityMask:   1
   Priority:       16
   MaxCpu:         0
   MemoryType:     Application
-  CpuSpeed:       804MHz
-  EnableL2Cache:  true
