@@ -157,15 +157,19 @@ int main(void) {
         ui_init(&ui, &audio, &fb);
 
         /*
-         * 30 fps render cap while playing.
+         * Hard 30 fps render lock.
          *
-         * render_tick toggles every frame.  When audio is playing we only
-         * call the C2D draw functions on even ticks (every other vsync).
-         * Input is still read every frame so controls feel instant.
-         * When stopped or paused we always draw so the UI stays snappy.
+         * render_tick toggles every vsync (60 Hz).  We only call the C2D
+         * draw functions on even ticks, giving us exactly 30 repaints per
+         * second regardless of playback state.
          *
-         * Effect on old 3DS: frees ~40% of main-CPU time that was going to
-         * screen repaints, giving the audio decoder more headroom.
+         * Audio is completely unaffected: audio_update() feeds NDSP buffer
+         * refills every vsync (60 Hz) — the DSP hardware does not care how
+         * often the screen is painted.  Decoding and rendering are
+         * independent; halving the repaint rate gives the decoder the CPU
+         * headroom it was fighting the renderer for.
+         *
+         * Input is also read every vsync so button presses are never missed.
          */
         int render_tick = 0;
 
@@ -174,7 +178,7 @@ int main(void) {
             u32 kDown = hidKeysDown();
             u32 kHeld = hidKeysHeld();
 
-            /* --- Input (every frame) --- */
+            /* --- Input (every frame @ 60 Hz) --- */
             if (kDown & KEY_DUP)   filebrowser_move(&fb, -1);
             if (kDown & KEY_DDOWN) filebrowser_move(&fb,  1);
             if (kDown & KEY_B)     filebrowser_go_up(&fb);
@@ -197,14 +201,12 @@ int main(void) {
             if (kDown & KEY_L)      audio_adjust_pitch(&audio, -1.0f);
             if (kDown & KEY_R)      audio_adjust_pitch(&audio,  1.0f);
 
-            /* --- Audio decode (every frame — NDSP needs buffer refills) --- */
+            /* --- Audio decode (every frame @ 60 Hz — NDSP needs frequent refills) --- */
             if (ndsp_ok) audio_update(&audio);
 
-            /* --- Render (every frame when idle, every other frame when playing) --- */
+            /* --- Render (every other frame = 30 Hz) --- */
             render_tick ^= 1;
-            bool do_render = (audio.status != AUDIO_PLAYING) || (render_tick == 0);
-
-            if (do_render) {
+            if (render_tick == 0) {
                 C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
                 C2D_TargetClear(top,    C2D_Color32(0x12, 0x12, 0x1E, 0xFF));
                 C2D_SceneBegin(top);
@@ -214,7 +216,7 @@ int main(void) {
                 ui_draw_bottom(&ui, bottom);
                 C3D_FrameEnd(0);
             } else {
-                /* Skipped frame — yield to other threads/NDSP without spinning */
+                /* Skipped frame — sync to vsync then yield to NDSP thread */
                 gspWaitForVBlank();
             }
         }

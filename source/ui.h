@@ -7,13 +7,9 @@
  * OLD 3DS OPTIMISATION:
  *   - shared_buf is a single C2D_TextBuf pre-allocated once and cleared each
  *     frame.  The original code called C2D_TextBufNew/Delete on every draw_text
- *     call (~20+ per frame), which caused ~1200 malloc/free per second and
- *     tanked the frame-rate on the slow ARM11 allocator.
- *   - wave[] is halved to 100 samples; bars are 4 px wide so the visualiser
- *     still fills all 400 px of the top screen while halving the draw-call count.
+ *     call (~20+ per frame), causing ~1200 malloc/free per second.
+ *   - Waveform visualizer removed entirely — see ui.c for details.
  */
-
-#define WAVE_BARS 100   /* was 200 */
 
 typedef struct {
     AudioState*  audio;
@@ -21,9 +17,6 @@ typedef struct {
 
     /* Pre-allocated text buffer — reused every frame instead of alloc per call */
     C2D_TextBuf  shared_buf;
-
-    /* Waveform visualizer data */
-    float        wave[WAVE_BARS];
 
     /* Cached colors */
     u32          col_bg;

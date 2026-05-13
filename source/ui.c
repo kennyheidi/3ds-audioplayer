@@ -143,23 +143,18 @@ void ui_draw_top(UIState* ui, C3D_RenderTarget* target) {
              pos_s/60, pos_s%60, dur_s/60, dur_s%60);
     draw_text(ui, time_str, 8, 62, 0.42f, ui->col_dim);
 
-    /* -- Waveform visualizer --
-     * WAVE_BARS = 100 (was 200).  Each bar is now 4 px wide (was 2 px)
-     * so the visualiser still fills the full 400 px top-screen width.
-     * This halves the draw-call count from 200 to 100 per frame.        */
-    audio_get_waveform(a, ui->wave, WAVE_BARS);
-    float wy = 100.0f; // center Y
-    float wh = 36.0f;  // half-height
-    draw_rect(0, wy - wh, SCREEN_W_TOP, wh * 2.0f, COL32(0x1A,0x1A,0x30,0xFF));
-    for (int i = 0; i < WAVE_BARS; i++) {
-        float h = fabsf(ui->wave[i]) * wh;
-        if (h < 1.0f) h = 1.0f;
-        u32 wc = (a->status == AUDIO_PLAYING)
-               ? COL32(0x7C, 0x3A, 0xFF, 0xCC)
-               : COL32(0x44, 0x44, 0x66, 0x88);
-        /* 4 px wide bars with 0 px gap — bar_x = i * 4, width = 3 */
-        draw_rect(i * 4.0f, wy - h, 3.0f, h * 2.0f, wc);
-    }
+    /*
+     * Waveform visualizer removed.
+     *
+     * The original visualizer called audio_get_waveform() (a full PCM buffer
+     * scan) then issued 100 individual C2D_DrawRectSolid calls per frame.
+     * On the old 3DS ARM11 each GPU draw call has non-trivial command-buffer
+     * overhead; 100 rects * 30 fps = 3000 rect submissions/sec just for the
+     * visualizer.  Removing it eliminates that cost entirely with no effect on
+     * audio playback.  A single flat separator rect takes its place.
+     */
+    draw_rect(0, 64, SCREEN_W_TOP, 72, COL32(0x1A, 0x1A, 0x30, 0xFF));
+    draw_rect(0, 99, SCREEN_W_TOP, 2,  COL32(0x55, 0x22, 0xCC, 0x88));
 
     /* -- Pitch control -- */
     draw_text(ui, "PITCH", 8, 148, 0.45f, ui->col_dim);
