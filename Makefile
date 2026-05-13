@@ -164,8 +164,7 @@ cia: $(BUILD) $(OUTPUT).elf $(OUTPUT).smdh _check_tools _ensure_banner
 	    -elf $(OUTPUT).elf \
 	    -rsf audioplayer.rsf \
 	    -icon $(OUTPUT).smdh \
-	    -banner $(OUTPUT).bnr \
-	    -exefslogo
+	    -banner $(OUTPUT).bnr
 	@echo ""
 	@echo "  Built: $(OUTPUT).cia"
 	@echo "  Install via FBI: copy .cia to SD card → FBI → SD → ..."
