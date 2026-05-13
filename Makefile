@@ -31,7 +31,7 @@ BUILD        := build
 SOURCES      := source
 ROMFS        := romfs
 TOOLS_DIR    := $(CURDIR)/tools
-BANNER_DIR   := $(CURDIR)/banner
+_DIR   := $(CURDIR)/banner
 
 #===============================================================================
 # devkitPro sanity checks
