@@ -16,14 +16,10 @@ SystemControlInfo:
   RemasterVersion: 0
   StackSize:       0x4000
 
-  # Old 3DS extended memory (requires Luma game patching)
-  SystemMode:        96MB
-
 AccessControlInfo:
   FileSystemAccess:
     - SdmcRw
 
-  # These New 3DS fields are safe to include but ignored on old 3DS
   IdealProcessor: 0
   AffinityMask:   1
   Priority:       16
