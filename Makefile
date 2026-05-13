@@ -10,6 +10,7 @@ APP_VERSION  := 1.0.0
 
 TARGET       := audioplayer
 BUILD        := build
+SOURCES      := source
 ROMFS        := romfs
 
 # devkitPro toolchain
@@ -39,7 +40,6 @@ ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
 CFLAGS   := -g -Wall -O2 -mword-relocations -ffunction-sections \
             $(ARCH) $(INCLUDE) -D__3DS__
-
 CXXFLAGS := $(CFLAGS) -std=c++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
@@ -50,14 +50,13 @@ LIBS     := -lcitro2d -lcitro3d -lctru -lm
 # Source files
 #---------------------------------------------------------------------------------
 
-# All .c files in source/, plus vendor/stb_vorbis.c
 CFILES := \
     $(wildcard source/*.c) \
     vendor/stb_vorbis.c
 
-# Convert "source/foo.c" → "build/foo.o"
-OFILES := $(patsubst source/%.c, $(BUILD)/%.o, $(filter source/%.c,$(CFILES))) \
-          $(patsubst vendor/%.c, $(BUILD)/%.o, $(filter vendor/%.c,$(CFILES)))
+OFILES := \
+    $(patsubst source/%.c, $(BUILD)/%.o, $(filter source/%.c,$(CFILES))) \
+    $(patsubst vendor/%.c, $(BUILD)/%.o, $(filter vendor/%.c,$(CFILES)))
 
 OUTPUT := $(CURDIR)/$(TARGET)
 
@@ -72,10 +71,11 @@ all: $(BUILD) $(OUTPUT).3dsx
 $(BUILD):
     mkdir -p $(BUILD)
 
-# Generic compile rule for any .c file
+# Compile source/*.c → build/*.o
 $(BUILD)/%.o: source/%.c
     $(CC) $(CFLAGS) -c $< -o $@
 
+# Compile vendor/*.c → build/*.o
 $(BUILD)/%.o: vendor/%.c
     $(CC) $(CFLAGS) -c $< -o $@
 
