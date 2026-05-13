@@ -20,7 +20,7 @@ AccessControlInfo:
   CoreVersion: 0
 
   FileSystemAccess:
-    - SdmcRw
+    - SdmcReadWrite
 
   IdealProcessor: 0
   AffinityMask:   1
