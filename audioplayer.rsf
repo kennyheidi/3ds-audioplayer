@@ -12,7 +12,7 @@ RomFs:
   RootPath:     romfs
 
 SystemControlInfo:
-  SaveDataSize:    0
+  SaveDataSize:    0KB
   RemasterVersion: 0
   StackSize:       0x4000
 
