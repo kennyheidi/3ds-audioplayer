@@ -10,7 +10,6 @@ APP_VERSION  := 1.0.0
 
 TARGET       := audioplayer
 BUILD        := build
-SOURCES      := source
 ROMFS        := romfs
 
 # devkitPro toolchain
@@ -26,9 +25,9 @@ CTRULIB      := $(DEVKITPRO)/libctru
 include $(DEVKITARM)/3ds_rules
 
 #---------------------------------------------------------------------------------
-# Includes and libs — defined BEFORE CFLAGS so they expand correctly
+# Includes and libs
 #---------------------------------------------------------------------------------
-INCLUDE  := -I$(SOURCES) \
+INCLUDE  := -Isource \
             -Ivendor \
             -I$(CTRULIB)/include \
             -I$(DEVKITPRO)/portlibs/3ds/include
@@ -36,12 +35,11 @@ INCLUDE  := -I$(SOURCES) \
 LIBDIRS  := $(CTRULIB) $(DEVKITPRO)/portlibs/3ds
 LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-#---------------------------------------------------------------------------------
-# Compiler flags
-#---------------------------------------------------------------------------------
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
+
 CFLAGS   := -g -Wall -O2 -mword-relocations -ffunction-sections \
             $(ARCH) $(INCLUDE) -D__3DS__
+
 CXXFLAGS := $(CFLAGS) -std=c++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
@@ -49,41 +47,47 @@ LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 LIBS     := -lcitro2d -lcitro3d -lctru -lm
 
 #---------------------------------------------------------------------------------
-# Source files — stb_vorbis.c lives in vendor/ so the wildcard never touches it;
-# audio.c #includes it directly via -Ivendor.
-#---------------------------------------------------------------------------------
 # Source files
+#---------------------------------------------------------------------------------
+
+# All .c files in source/, plus vendor/stb_vorbis.c
 CFILES := \
-    $(wildcard $(SOURCES)/*.c) \
+    $(wildcard source/*.c) \
     vendor/stb_vorbis.c
 
-OFILES := $(patsubst %.c, $(BUILD)/%.o, $(CFILES))
+# Convert "source/foo.c" → "build/foo.o"
+OFILES := $(patsubst source/%.c, $(BUILD)/%.o, $(filter source/%.c,$(CFILES))) \
+          $(patsubst vendor/%.c, $(BUILD)/%.o, $(filter vendor/%.c,$(CFILES)))
 
-
-OUTPUT   := $(CURDIR)/$(TARGET)
+OUTPUT := $(CURDIR)/$(TARGET)
 
 #---------------------------------------------------------------------------------
-# Targets
+# Build rules
 #---------------------------------------------------------------------------------
+
 .PHONY: all clean
 
 all: $(BUILD) $(OUTPUT).3dsx
 
 $(BUILD):
-	mkdir -p $@
+    mkdir -p $(BUILD)
 
-$(BUILD)/%.o: %.c     $(CC) $(CFLAGS) -c $< -o $@
-	$(CC) $(CFLAGS) -c $< -o $@
+# Generic compile rule for any .c file
+$(BUILD)/%.o: source/%.c
+    $(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: vendor/%.c
+    $(CC) $(CFLAGS) -c $< -o $@
 
 $(OUTPUT).elf: $(OFILES)
-	$(CC) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
+    $(CC) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
 
 $(OUTPUT).smdh:
-	smdhtool --create "$(APP_TITLE)" "$(APP_DESC)" "$(APP_AUTHOR)" \
-	    $(CTRULIB)/default_icon.png $@
+    smdhtool --create "$(APP_TITLE)" "$(APP_DESC)" "$(APP_AUTHOR)" \
+        $(CTRULIB)/default_icon.png $@
 
 $(OUTPUT).3dsx: $(OUTPUT).elf $(OUTPUT).smdh
-	3dsxtool $< $@ --smdh=$(OUTPUT).smdh --romfs=$(ROMFS)
+    3dsxtool $< $@ --smdh=$(OUTPUT).smdh --romfs=$(ROMFS)
 
 clean:
-	rm -rf $(BUILD) $(OUTPUT).elf $(OUTPUT).3dsx $(OUTPUT).smdh
+    rm -rf $(BUILD) $(OUTPUT).elf $(OUTPUT).3dsx $(OUTPUT).smdh
