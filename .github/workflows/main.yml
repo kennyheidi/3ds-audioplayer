@@ -26,9 +26,9 @@ jobs:
             cmake wget unzip git ca-certificates build-essential libgmp-dev python3
 
       # ---------------------------------------------------------
-      # makerom (build from source, no portlibs needed)
+      # makerom (build from source, no portlibs, no pacman)
       # ---------------------------------------------------------
-      - name: Compile and Install makerom
+      - name: Build makerom
         run: |
           git clone --recursive --depth 1 https://github.com/profi200/Project_CTR /tmp/project_ctr
           cd /tmp/project_ctr/makerom
@@ -39,7 +39,7 @@ jobs:
       # ---------------------------------------------------------
       # bannertool
       # ---------------------------------------------------------
-      - name: Compile and Install bannertool
+      - name: Build bannertool
         run: |
           git clone --recursive --depth 1 https://github.com/Epicpkmn11/bannertool /tmp/bannertool_src
           cmake -B /tmp/bannertool_src/build -S /tmp/bannertool_src
@@ -49,13 +49,15 @@ jobs:
 
       - name: Verify tools
         run: |
+          echo "makerom version:"
           makerom -v || true
+          echo "bannertool:"
           bannertool --help | head -n 1 || true
 
       # ---------------------------------------------------------
       # citro3d
       # ---------------------------------------------------------
-      - name: Build and install citro3d
+      - name: Build citro3d
         run: |
           git clone --depth 1 https://github.com/devkitPro/citro3d.git /tmp/citro3d
           make -C /tmp/citro3d install
@@ -63,7 +65,7 @@ jobs:
       # ---------------------------------------------------------
       # citro2d
       # ---------------------------------------------------------
-      - name: Build and install citro2d
+      - name: Build citro2d
         run: |
           git clone --depth 1 https://github.com/devkitPro/citro2d.git /tmp/citro2d
           cd /tmp/citro2d
@@ -90,17 +92,17 @@ jobs:
           mkdir -p romfs build
           python3 make_icon.py
 
-      - name: Build
+      - name: Build project
         run: make
 
-      - name: Upload 3dsx Artifact
+      - name: Upload 3DSX
         uses: actions/upload-artifact@v4
         with:
           name: audioplayer-3dsx
           path: audioplayer.3dsx
           if-no-files-found: error
 
-      - name: Upload CIA Artifact
+      - name: Upload CIA
         uses: actions/upload-artifact@v4
         with:
           name: audioplayer-cia
