@@ -40,7 +40,7 @@
 #include "dr_wav.h"
 
 #define STB_VORBIS_NO_STDIO 0
-#include "../vendor/stb_vorbis.c"
+#include "stb_vorbis.c"
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
