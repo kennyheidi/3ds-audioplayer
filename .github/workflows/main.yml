@@ -28,7 +28,7 @@ jobs:
 
       - name: Compile and Install makerom from source
         run: |
-          git clone --recursive --depth 1 https://github.com/3DSGuy/Project_CTR/blob/master/makerom
+          git clone --recursive --depth 1 https://github.com/3DSGuy/Project_CTR/makerom
           make -C /tmp/project_ctr/makerom
           mv /tmp/project_ctr/makerom/makerom /opt/devkitpro/tools/bin/makerom
           chmod +x /opt/devkitpro/tools/bin/makerom
