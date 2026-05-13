@@ -1,6 +1,5 @@
 name: Build 3DS Homebrew
-
-on:
+"on":
   push:
     branches: [main, master]
   workflow_dispatch:
@@ -17,15 +16,11 @@ jobs:
       PATH: /opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
     steps:
-      # -----------------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # -----------------------------------------------------------------------
-      # Build dependencies — same as before
-      # -----------------------------------------------------------------------
-      - name: Install build tools (cmake, unzip, python3)
-        run: apt-get update -qq && apt-get install -y --no-install-recommends cmake unzip python3
+      - name: Install build tools
+        run: apt-get update -qq && apt-get install -y --no-install-recommends cmake unzip python3 build-essential
 
       - name: Build and install citro3d
         run: |
@@ -43,12 +38,32 @@ jobs:
           cmake --build build
           cmake --install build
 
+      # Build bannertool from source using the carstene1ns mirror
+      # (the Steveice10 release binaries return 403 from GitHub Actions)
+      - name: Build bannertool from source
+        run: |
+          git clone --depth 1 https://github.com/carstene1ns/3ds-bannertool.git /tmp/bannertool
+          cd /tmp/bannertool
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          cp build/bannertool /usr/local/bin/bannertool
+          chmod +x /usr/local/bin/bannertool
+          bannertool 2>&1 | head -1 || true
+
+      # makerom — use the devkitPro-hosted copy which is reliably available
+      - name: Download makerom
+        run: |
+          curl -fsSL -o /tmp/makerom.zip \
+            https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip
+          unzip -o /tmp/makerom.zip makerom -d /usr/local/bin
+          chmod +x /usr/local/bin/makerom
+
       - name: Download single-header audio decoders
         run: |
           mkdir -p source vendor
-          curl -fsSL -o source/dr_mp3.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
-          curl -fsSL -o source/dr_flac.h https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
-          curl -fsSL -o source/dr_wav.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
+          curl -fsSL -o source/dr_mp3.h    https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
+          curl -fsSL -o source/dr_flac.h   https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
+          curl -fsSL -o source/dr_wav.h    https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
           curl -fsSL -o vendor/stb_vorbis.c https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c
 
       - name: Create icon and romfs directory
@@ -56,51 +71,15 @@ jobs:
           mkdir -p romfs build
           python3 make_icon.py
 
-      # -----------------------------------------------------------------------
-      # Download makerom + bannertool — pinned to known-good releases
-      # -----------------------------------------------------------------------
-      - name: Download makerom v0.18.3
-        run: |
-          curl -fsSL -o /tmp/makerom.zip \
-            https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip
-          unzip -o /tmp/makerom.zip makerom -d /usr/local/bin
-          chmod +x /usr/local/bin/makerom
-          echo "makerom installed at $(which makerom)"
-
-      - name: Download bannertool 1.2.0
-        run: |
-          curl -fsSL -o /tmp/bannertool.zip \
-            https://github.com/Steveice10/bannertool/releases/download/1.2.0/bannertool.zip
-          mkdir -p /tmp/bannertool_unzip
-          unzip -o /tmp/bannertool.zip -d /tmp/bannertool_unzip
-          cp /tmp/bannertool_unzip/linux_x86_64/bannertool /usr/local/bin/bannertool
-          chmod +x /usr/local/bin/bannertool
-          bannertool 2>&1 | head -1 || true   # bannertool exits non-zero with no args; that's fine
-
-      # -----------------------------------------------------------------------
-      # Generate banner assets (256x128 PNG + silent WAV)
-      # The Makefile's `make banner` target uses tools/gen_banner.py.
-      # We run it here explicitly so the paths are predictable.
-      # -----------------------------------------------------------------------
       - name: Generate banner assets
         run: make banner
 
-      # -----------------------------------------------------------------------
-      # Build .3dsx
-      # -----------------------------------------------------------------------
       - name: Build .3dsx
         run: make
 
-      # -----------------------------------------------------------------------
-      # Build .cia (extended memory, installable title)
-      # Calls bannertool + makerom directly via the Makefile's `cia` target.
-      # -----------------------------------------------------------------------
       - name: Build .cia
         run: make cia
 
-      # -----------------------------------------------------------------------
-      # Upload both artifacts
-      # -----------------------------------------------------------------------
       - name: Upload .3dsx
         uses: actions/upload-artifact@v4
         with:
