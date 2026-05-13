@@ -25,8 +25,6 @@ AccessControlInfo:
   
   # Hardware and Memory permissions
   SystemMode:        96MB
-  New3dsSystemMode:  124MB
-  New3dsCpuSpeed:    804MHz
   
   FileSystemAccess:
     - SdmcRw
