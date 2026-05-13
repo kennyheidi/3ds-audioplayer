@@ -23,6 +23,3 @@ AccessControlInfo:
     - SdmcRw
   # Modern makerom often looks here for the SystemMode
   SystemMode: 96MB
-  New3dsSystemMode: 124MB
-  New3dsCpuSpeed: 804MHz
-  UseOtherVariationSaveData: false
