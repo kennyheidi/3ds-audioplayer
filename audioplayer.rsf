@@ -16,22 +16,65 @@ SystemControlInfo:
   StackSize:     0x100000
 
 AccessControlInfo:
-  # Mandatory scheduling settings
+  # CoreVersion & scheduling (Mandatory)
   CoreVersion:       2
   Priority:          16
   IdealProcessor:    0
   MemoryType:        Application
   HandleTableSize:   512
-
-  # Hardware / New 3DS settings
+  
+  # Hardware and Memory permissions
   SystemMode:        96MB
   SystemModeExt:     124MB
   CpuSpeed:          804MHz
   EnableL2Cache:     true
 
-  # The fix for your current error:
+  # Filesystem Access
   FileSystemAccess:
     - DirectSdmc
     - DirectSdmcWrite
+
+  # Service Access Control (List of allowed services)
+  ServiceAccessControl:
+    - apt:u
+    - gsp::gpu
+    - dsp::LOW
+    - hid:USER
+    - am:u
+    - cfg:u
+    - frd:u
+    - ir:u
+    - nfc:u
+    - ndm:u
+    - nim:u
+    - ns:s
+    - ptm:u
+    - ssl:s
+    - soc:u
+
+  # System Call Access (Allowed Kernel Syscalls)
+  SystemCallAccess:
+    - ControlMemory
+    - ControlProcessMemory
+    - ExitProcess
+    - GetProcessInfo
+    - GetProcessList
+    - GetThreadInfo
+    - GetThreadList
+    - MapMemoryBlock
+    - QueryMemory
+    - QueryProcessMemory
+    - ReleaseMutex
+    - SendSyncRequest
+    - SleepThread
+    - WaitSynchronization
+    - ConnectToPort
+    - SendSyncRequest1
+    - SendSyncRequest2
+    - SendSyncRequest3
+    - SendSyncRequest4
+    - CloseHandle
+    - CreateAddressArbiter
+    - ArbitrateAddress
 
   UseOtherVariationSaveData: false
