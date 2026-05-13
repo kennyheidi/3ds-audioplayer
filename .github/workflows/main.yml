@@ -26,7 +26,14 @@ jobs:
             cmake wget unzip git ca-certificates build-essential libgmp-dev python3
 
       # ---------------------------------------------------------
-      # makerom (correct repo!)
+      # Install portlibs (required for makerom)
+      # ---------------------------------------------------------
+      - name: Install 3DS portlibs
+        run: |
+          dkp-pacman -Sy --noconfirm 3ds-portlibs
+
+      # ---------------------------------------------------------
+      # makerom (correct repo + correct build)
       # ---------------------------------------------------------
       - name: Compile and Install makerom
         run: |
@@ -36,7 +43,7 @@ jobs:
           chmod +x /opt/devkitpro/tools/bin/makerom
 
       # ---------------------------------------------------------
-      # bannertool (fix paths)
+      # bannertool (correct paths)
       # ---------------------------------------------------------
       - name: Compile and Install bannertool
         run: |
@@ -74,7 +81,7 @@ jobs:
           cmake --install build
 
       # ---------------------------------------------------------
-      # Audio decoders (fix URLs)
+      # Audio decoders (correct URLs)
       # ---------------------------------------------------------
       - name: Download audio decoders
         run: |
