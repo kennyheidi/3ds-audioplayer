@@ -17,6 +17,8 @@ SystemControlInfo:
   StackSize:       0x4000
 
 AccessControlInfo:
+  CoreVersion: 0
+
   FileSystemAccess:
     - SdmcRw
 
