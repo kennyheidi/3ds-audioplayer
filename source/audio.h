@@ -4,7 +4,7 @@
 
 #define AUDIO_CHANNEL    0
 #define SAMPLE_RATE      44100
-#define BUFFER_SIZE      (SAMPLE_RATE * 4)   // 4 seconds of stereo s16 (was 2)
+#define BUFFER_SIZE      (SAMPLE_RATE * 2)   // 2 seconds of stereo s16
 #define PITCH_MIN       -12.0f               // semitones
 #define PITCH_MAX        12.0f
 #define SPEED_MIN        0.25f
@@ -42,9 +42,9 @@ typedef struct {
     bool         ndsp_available;
     void*        decoder;
 
-    // NDSP wave buffers (triple-buffered for better stability)
-    ndspWaveBuf  wave_buf[3];
-    s16*         pcm_buf[3];
+    // NDSP wave buffers (double-buffered)
+    ndspWaveBuf  wave_buf[2];
+    s16*         pcm_buf[2];
     int          active_buf;
 
     // Pitch/speed processing scratch buffer
