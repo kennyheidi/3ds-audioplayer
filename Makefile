@@ -52,8 +52,13 @@ LIBS     := -lcitro2d -lcitro3d -lctru -lm
 # Source files — stb_vorbis.c lives in vendor/ so the wildcard never touches it;
 # audio.c #includes it directly via -Ivendor.
 #---------------------------------------------------------------------------------
-CFILES   := $(wildcard $(SOURCES)/*.c)
-OFILES   := $(patsubst $(SOURCES)/%.c, $(BUILD)/%.o, $(CFILES))
+# Source files
+CFILES := \
+    $(wildcard $(SOURCES)/*.c) \
+    vendor/stb_vorbis.c
+
+OFILES := $(patsubst %.c, $(BUILD)/%.o, $(CFILES))
+
 
 OUTPUT   := $(CURDIR)/$(TARGET)
 
@@ -67,7 +72,7 @@ all: $(BUILD) $(OUTPUT).3dsx
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/%.o: $(SOURCES)/%.c
+$(BUILD)/%.o: %.c     $(CC) $(CFLAGS) -c $< -o $@
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUTPUT).elf: $(OFILES)
