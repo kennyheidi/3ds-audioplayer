@@ -1,7 +1,9 @@
 name: Build 3DS Homebrew
 "on":
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -19,8 +21,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install build tools
-        run: apt-get update -qq && apt-get install -y --no-install-recommends cmake unzip python3 build-essential
+      - name: Install cmake
+        run: apt-get update -qq && apt-get install -y --no-install-recommends cmake
 
       - name: Build and install citro3d
         run: |
@@ -38,58 +40,25 @@ jobs:
           cmake --build build
           cmake --install build
 
-      # Build bannertool from source using the carstene1ns mirror
-      # (the Steveice10 release binaries return 403 from GitHub Actions)
-      - name: Build bannertool from source
-        run: |
-          git clone --depth 1 https://github.com/carstene1ns/3ds-bannertool.git /tmp/bannertool
-          cd /tmp/bannertool
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
-          cp build/bannertool /usr/local/bin/bannertool
-          chmod +x /usr/local/bin/bannertool
-          bannertool 2>&1 | head -1 || true
-
-      # makerom — use the devkitPro-hosted copy which is reliably available
-      - name: Download makerom
-        run: |
-          curl -fsSL -o /tmp/makerom.zip \
-            https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip
-          unzip -o /tmp/makerom.zip makerom -d /usr/local/bin
-          chmod +x /usr/local/bin/makerom
-
-      - name: Download single-header audio decoders
+      - name: Download audio decoders
         run: |
           mkdir -p source vendor
-          curl -fsSL -o source/dr_mp3.h    https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
-          curl -fsSL -o source/dr_flac.h   https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
-          curl -fsSL -o source/dr_wav.h    https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
+          curl -fsSL -o source/dr_mp3.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
+          curl -fsSL -o source/dr_flac.h https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
+          curl -fsSL -o source/dr_wav.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
           curl -fsSL -o vendor/stb_vorbis.c https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c
 
-      - name: Create icon and romfs directory
+      - name: Create icon and directories
         run: |
           mkdir -p romfs build
           python3 make_icon.py
 
-      - name: Generate banner assets
-        run: make banner
-
-      - name: Build .3dsx
+      - name: Build
         run: make
 
-      - name: Build .cia
-        run: make cia
-
-      - name: Upload .3dsx
+      - name: Upload 3dsx
         uses: actions/upload-artifact@v4
         with:
           name: audioplayer-3dsx
           path: audioplayer.3dsx
-          if-no-files-found: error
-
-      - name: Upload .cia
-        uses: actions/upload-artifact@v4
-        with:
-          name: audioplayer-cia
-          path: audioplayer.cia
           if-no-files-found: error
