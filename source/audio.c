@@ -1,4 +1,4 @@
-// audio.c – matches audio.h, fixed BUFFER_SIZE usage, tuned for old 3DS
+// audio.c – matches audio.h, fixed buffer math, visualizer disabled
 
 #include <3ds.h>
 #include <string.h>
@@ -17,7 +17,7 @@
 #include "dr_flac.h"
 #include "dr_wav.h"
 
-// ---- stb_vorbis forward declarations (implementation is in vendor/stb_vorbis.c) ----
+// ---- stb_vorbis forward declarations (implementation in vendor/stb_vorbis.c) ----
 
 typedef struct stb_vorbis stb_vorbis;
 
@@ -61,13 +61,19 @@ static void decoder_close(AudioState* a) {
 
     switch (d->fmt) {
         case FMT_MP3:
-            if (d->h.mp3) drmp3_close(d->h.mp3);
+            if (d->h.mp3) {
+                drmp3_uninit(d->h.mp3);
+                free(d->h.mp3);
+            }
             break;
         case FMT_FLAC:
             if (d->h.flac) drflac_close(d->h.flac);
             break;
         case FMT_WAV:
-            if (d->h.wav) drwav_close(d->h.wav);
+            if (d->h.wav) {
+                drwav_uninit(d->h.wav);
+                free(d->h.wav);
+            }
             break;
         case FMT_OGG:
             if (d->h.ogg) stb_vorbis_close(d->h.ogg);
@@ -146,7 +152,7 @@ static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
                 out,
                 maxFrames * d->channels
             );
-            framesRead = samples; // returns samples per channel
+            framesRead = samples; // samples per channel == frames
         } break;
 
         default:
@@ -164,7 +170,7 @@ static int decoder_read_frames(AudioState* a, s16* out, int maxFrames) {
     return framesRead;
 }
 
-// Fill one NDSP buffer; BUFFER_SIZE is nsamples per channel
+// Fill one NDSP buffer; BUFFER_SIZE = nsamples per channel
 static void fill_buffer(AudioState* a, int bufIndex) {
     DecoderState* d = get_dec(a);
     ndspWaveBuf*  wb = &a->wave_buf[bufIndex];
@@ -243,7 +249,7 @@ void audio_init(AudioState* a) {
     }
     a->active_buf = 0;
 
-    // Optional processing buffer (same size as one PCM buffer)
+    // Keep allocation consistent even if unused
     a->process_buf_size = BUFFER_SIZE * 2;
     a->process_buf      = (s16*)linearAlloc(a->process_buf_size * sizeof(s16));
 
@@ -332,13 +338,15 @@ void audio_play(AudioState* a, const char* path) {
         } break;
 
         case FMT_WAV: {
-            drwav* wav = drwav_open_file(path, NULL);
-            if (wav) {
+            drwav* wav = (drwav*)malloc(sizeof(drwav));
+            if (wav && drwav_init_file(wav, path, NULL)) {
                 d->h.wav       = wav;
                 d->sampleRate  = (int)wav->sampleRate;
                 d->channels    = (int)wav->channels;
                 d->totalFrames = wav->totalPCMFrameCount;
                 ok = true;
+            } else if (wav) {
+                free(wav);
             }
         } break;
 
@@ -463,37 +471,9 @@ float audio_progress(const AudioState* a) {
     return p;
 }
 
+// Visualizer disabled: just zero out the buffer
 void audio_get_waveform(const AudioState* a, float* buf, int n) {
+    (void)a;
     if (!buf || n <= 0) return;
-
-    const s16* src = NULL;
-    int        samples = 0;
-
-    int idx = a->active_buf;
-    const ndspWaveBuf* wb = &a->wave_buf[idx];
-
-    if (wb->nsamples > 0 && a->pcm_buf[idx]) {
-        src     = a->pcm_buf[idx];
-        samples = wb->nsamples; // nsamples per channel
-    }
-
-    if (!src || samples <= 0) {
-        memset(buf, 0, n * sizeof(float));
-        return;
-    }
-
-    int totalSamples = samples; // per channel
-    int step = (totalSamples > n) ? (totalSamples / n) : 1;
-    int outIndex = 0;
-
-    for (int i = 0; i < totalSamples && outIndex < n; i += step) {
-        float v = (float)src[i * 2 + 0] / 32768.0f; // left channel
-        if (v < -1.0f) v = -1.0f;
-        if (v >  1.0f) v =  1.0f;
-        buf[outIndex++] = v;
-    }
-
-    for (; outIndex < n; outIndex++) {
-        buf[outIndex] = 0.0f;
-    }
+    memset(buf, 0, n * sizeof(float));
 }
