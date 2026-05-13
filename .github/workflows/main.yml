@@ -26,11 +26,15 @@ jobs:
             cmake wget unzip git ca-certificates build-essential libgmp-dev python3
 
       # ---------------------------------------------------------
-      # Install makerom (prebuilt, no portlibs needed)
+      # makerom (build from source, no portlibs needed)
       # ---------------------------------------------------------
-      - name: Install makerom
+      - name: Compile and Install makerom
         run: |
-          dkp-pacman -S --noconfirm makerom
+          git clone --recursive --depth 1 https://github.com/profi200/Project_CTR /tmp/project_ctr
+          cd /tmp/project_ctr/makerom
+          make USE_SYSTEM_LIBS=0
+          mv makerom /opt/devkitpro/tools/bin/makerom
+          chmod +x /opt/devkitpro/tools/bin/makerom
 
       # ---------------------------------------------------------
       # bannertool
@@ -79,4 +83,26 @@ jobs:
           curl -fsSL -o source/dr_mp3.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
           curl -fsSL -o source/dr_flac.h https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
           curl -fsSL -o source/dr_wav.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
-          curl -fsSL -o vendor/stb_vorbis.c https://raw.githubusercontent.com/nothings/st
+          curl -fsSL -o vendor/stb_vorbis.c https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c
+
+      - name: Create icon and directories
+        run: |
+          mkdir -p romfs build
+          python3 make_icon.py
+
+      - name: Build
+        run: make
+
+      - name: Upload 3dsx Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audioplayer-3dsx
+          path: audioplayer.3dsx
+          if-no-files-found: error
+
+      - name: Upload CIA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audioplayer-cia
+          path: audioplayer.cia
+          if-no-files-found: error
