@@ -1,6 +1,6 @@
 #---------------------------------------------------------------------------------
 # 3DS Audio Player — Makefile
-# Requires devkitARM + libctru + citro2d + makerom
+# Requires devkitARM + libctru + citro2d
 #---------------------------------------------------------------------------------
 
 APP_TITLE    := 3DS Audio Player
@@ -12,9 +12,8 @@ TARGET       := audioplayer
 BUILD        := build
 SOURCES      := source
 ROMFS        := romfs
-RSF          := app.rsf
 
-# devkitPro toolchain verification
+# devkitPro toolchain
 ifeq ($(strip $(DEVKITPRO)),)
   $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path>")
 endif
@@ -27,7 +26,7 @@ CTRULIB      := $(DEVKITPRO)/libctru
 include $(DEVKITARM)/3ds_rules
 
 #---------------------------------------------------------------------------------
-# Includes and libs
+# Includes and libs — defined BEFORE CFLAGS so they expand correctly
 #---------------------------------------------------------------------------------
 INCLUDE  := -I$(SOURCES) \
             -Ivendor \
@@ -50,7 +49,8 @@ LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 LIBS     := -lcitro2d -lcitro3d -lctru -lm
 
 #---------------------------------------------------------------------------------
-# Source files
+# Source files — stb_vorbis.c lives in vendor/ so the wildcard never touches it;
+# audio.c #includes it directly via -Ivendor.
 #---------------------------------------------------------------------------------
 CFILES   := $(wildcard $(SOURCES)/*.c)
 OFILES   := $(patsubst $(SOURCES)/%.c, $(BUILD)/%.o, $(CFILES))
@@ -62,7 +62,7 @@ OUTPUT   := $(CURDIR)/$(TARGET)
 #---------------------------------------------------------------------------------
 .PHONY: all clean
 
-all: $(BUILD) $(OUTPUT).3dsx $(OUTPUT).cia
+all: $(BUILD) $(OUTPUT).3dsx
 
 $(BUILD):
 	mkdir -p $@
@@ -80,9 +80,5 @@ $(OUTPUT).smdh:
 $(OUTPUT).3dsx: $(OUTPUT).elf $(OUTPUT).smdh
 	3dsxtool $< $@ --smdh=$(OUTPUT).smdh --romfs=$(ROMFS)
 
-# Final High Memory-Enabled CIA container generator (Uses generic built-in banner)
-$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh $(RSF)
-	makerom -f cia -o $@ -rsf $(RSF) -elf $(OUTPUT).elf -icon $(OUTPUT).smdh -romfs $(ROMFS)
-
 clean:
-	rm -rf $(BUILD) $(OUTPUT).elf $(OUTPUT).3dsx $(OUTPUT).smdh $(OUTPUT).cia
+	rm -rf $(BUILD) $(OUTPUT).elf $(OUTPUT).3dsx $(OUTPUT).smdh
