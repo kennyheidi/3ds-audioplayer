@@ -28,13 +28,13 @@ jobs:
 
       - name: Install 3DS Build Tools (makerom and bannertool)
         run: |
-          # Download and install makerom v0.19.0 safely
+          # Download and install makerom v0.19.0 directly from official release binaries
           wget -q -O /tmp/makerom.zip github.com
           unzip -q /tmp/makerom.zip -d /tmp/makerom_out
           mv /tmp/makerom_out/makerom /opt/devkitpro/tools/bin/makerom
           chmod +x /opt/devkitpro/tools/bin/makerom
 
-          # Download and install bannertool v1.2.2 safely
+          # Download and install bannertool v1.2.2 directly from asset mirror
           wget -q -O /tmp/bannertool.zip github.com
           unzip -q /tmp/bannertool.zip -d /tmp/bannertool_out
           mv /tmp/bannertool_out/linux-x86_64/bannertool /opt/devkitpro/tools/bin/bannertool
