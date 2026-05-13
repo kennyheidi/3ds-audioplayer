@@ -11,15 +11,17 @@ TitleInfo:
 RomFs:
   RootPath:      romfs
 
-# In newer makerom, these are often moved to the top level 
-# or specific sub-blocks. Try this simplified SystemControlInfo:
 SystemControlInfo:
-  SaveDataSize: 0KB
-  StackSize: 0x100000
+  SaveDataSize:  0KB
+  StackSize:     0x100000
 
-# AccessControlInfo handles the permissions and hardware modes
 AccessControlInfo:
+  # CoreVersion is mandatory in recent makerom versions
+  CoreVersion:   2
+  
+  # Hardware/Memory settings
+  SystemMode:    96MB
+
   FileSystemAccess:
     - SdmcRw
-  # Modern makerom often looks here for the SystemMode
-  SystemMode: 96MB
+  UseOtherVariationSaveData: false
