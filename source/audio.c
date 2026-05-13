@@ -31,10 +31,6 @@
  *   3. resample_stereo() inner loop replaces fmax/fmin (which accept
  *      double) with an explicit branch clamp, avoiding implicit
  *      double promotion.
- *
- *   4. Triple-buffering (3 buffers instead of 2) provides better stability.
- *      With 4-second buffers, if frame rate drops the DSP has more time
- *      to consume audio before running out of data.
  */
 
 #include "audio.h"
@@ -124,8 +120,8 @@ void audio_init(AudioState* a) {
     a->pitch  = 0.0f;
     a->speed  = 1.0f;
 
-    /* Allocate PCM triple-buffers in linear memory (required by NDSP) */
-    for (int i = 0; i < 3; i++) {
+    /* Allocate PCM double-buffers in linear memory (required by NDSP) */
+    for (int i = 0; i < 2; i++) {
         a->pcm_buf[i] = (s16*)linearAlloc(BUFFER_SIZE * sizeof(s16));
         memset(a->pcm_buf[i], 0, BUFFER_SIZE * sizeof(s16));
     }
@@ -144,7 +140,7 @@ void audio_init(AudioState* a) {
 
 void audio_shutdown(AudioState* a) {
     audio_stop(a);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         if (a->pcm_buf[i]) { linearFree(a->pcm_buf[i]); a->pcm_buf[i] = NULL; }
     }
     if (a->process_buf) { linearFree(a->process_buf); a->process_buf = NULL; }
@@ -232,7 +228,7 @@ void audio_play(AudioState* a, const char* path) {
     a->active_buf = 0;
     a->position   = 0;
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         memset(&a->wave_buf[i], 0, sizeof(ndspWaveBuf));
         a->wave_buf[i].data_vaddr = a->pcm_buf[i];
         a->wave_buf[i].status     = NDSP_WBUF_FREE;
@@ -315,8 +311,7 @@ void audio_update(AudioState* a) {
     DSP_FlushDataCache(dst, out_frames * 2 * sizeof(s16));
     ndspChnWaveBufAdd(AUDIO_CHANNEL, wb);
 
-    /* Cycle through 3 buffers instead of 2 */
-    a->active_buf = (a->active_buf + 1) % 3;
+    a->active_buf ^= 1;
 }
 
 void audio_adjust_pitch(AudioState* a, float semitones) {
