@@ -37,7 +37,10 @@ AccessControlInfo:
     - SdmcRw
   UseOtherVariationSaveData: false
 
-ExHeader:
+SystemControlInfo:
+  SaveDataSize: 0
+  RemasterVersion: 0
+  StackSize: 0x4000
   # 96MB on old 3DS with Luma3DS; silently falls back to 64MB without it
   SystemMode:        96MB
   # Full 124MB APPLICATION memory on New 3DS
