@@ -1,9 +1,7 @@
 name: Build 3DS Homebrew
-"on":
+on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -24,40 +22,49 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update -qq
-          apt-get install -y --no-install-recommends cmake wget unzip git ca-certificates build-essential libgmp-dev
+          apt-get install -y --no-install-recommends \
+            cmake wget unzip git ca-certificates build-essential libgmp-dev python3
 
-      - name: Compile and Install makerom from source
+      # ---------------------------------------------------------
+      # makerom (correct repo!)
+      # ---------------------------------------------------------
+      - name: Compile and Install makerom
         run: |
-          git clone --recursive --depth 1 https://github.com/3DSGuy/Project_CTR/makerom
+          git clone --recursive --depth 1 https://github.com/profi200/Project_CTR /tmp/project_ctr
           make -C /tmp/project_ctr/makerom
           mv /tmp/project_ctr/makerom/makerom /opt/devkitpro/tools/bin/makerom
           chmod +x /opt/devkitpro/tools/bin/makerom
 
-      - name: Compile and Install bannertool from source
+      # ---------------------------------------------------------
+      # bannertool (fix paths)
+      # ---------------------------------------------------------
+      - name: Compile and Install bannertool
         run: |
-          git clone --recursive --depth 1 https://github.com/Epicpkmn11/bannertool
+          git clone --recursive --depth 1 https://github.com/Epicpkmn11/bannertool /tmp/bannertool_src
           cmake -B /tmp/bannertool_src/build -S /tmp/bannertool_src
           cmake --build /tmp/bannertool_src/build
           mv /tmp/bannertool_src/build/bannertool /opt/devkitpro/tools/bin/bannertool
           chmod +x /opt/devkitpro/tools/bin/bannertool
 
-      - name: Verify tools are working and in PATH
+      - name: Verify tools
         run: |
-          echo "=== Verifying makerom version ==="
           makerom -v || true
-          echo "=== Verifying bannertool environment ==="
           bannertool --help | head -n 1 || true
 
+      # ---------------------------------------------------------
+      # citro3d
+      # ---------------------------------------------------------
       - name: Build and install citro3d
         run: |
-          git clone --depth 1 https://github.com/devkitPro/citro3d.git
-          /tmp/citro3d
+          git clone --depth 1 https://github.com/devkitPro/citro3d.git /tmp/citro3d
           make -C /tmp/citro3d install
 
+      # ---------------------------------------------------------
+      # citro2d
+      # ---------------------------------------------------------
       - name: Build and install citro2d
         run: |
-          git clone --depth 1 https://github.com/devkitPro/citro2d.git
-          /tmp/citro2d
+          git clone --depth 1 https://github.com/devkitPro/citro2d.git /tmp/citro2d
           cd /tmp/citro2d
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake \
@@ -66,13 +73,16 @@ jobs:
           cmake --build build
           cmake --install build
 
+      # ---------------------------------------------------------
+      # Audio decoders (fix URLs)
+      # ---------------------------------------------------------
       - name: Download audio decoders
         run: |
           mkdir -p source vendor
-          curl -fsSL -o source/dr_mp3.h  githubusercontent.com
-          curl -fsSL -o source/dr_flac.h githubusercontent.com
-          curl -fsSL -o source/dr_wav.h  githubusercontent.com
-          curl -fsSL -o vendor/stb_vorbis.c githubusercontent.com
+          curl -fsSL -o source/dr_mp3.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
+          curl -fsSL -o source/dr_flac.h https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
+          curl -fsSL -o source/dr_wav.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
+          curl -fsSL -o vendor/stb_vorbis.c https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c
 
       - name: Create icon and directories
         run: |
