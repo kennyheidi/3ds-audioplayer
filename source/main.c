@@ -10,7 +10,6 @@
  *     NDSP errors are shown via C2D text instead of printf.
  *   - Render targets created before NDSP check so C2D is available for
  *     the error screen without restructuring the flow.
- *   - Sleep mode support: Music continues playing when the lid is closed.
  */
 
 #include <3ds.h>
@@ -95,14 +94,6 @@ int main(void) {
 
     romfsInit();
     cfguInit();
-
-    /*
-     * Enable audio playback in sleep mode.
-     * When aptSetSleepAllowed(true), the DSP and audio will continue
-     * processing even when the lid is closed. The main thread will block
-     * on aptMainLoop() but NDSP remains active, allowing music to play.
-     */
-    aptSetSleepAllowed(true);
 
     /*
      * Create render targets BEFORE the NDSP check so we can use C2D
