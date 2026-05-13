@@ -7,7 +7,7 @@ SystemControlInfo:
 
 BasicInfo:
   Title: 3DS Audio Player
-  Company: You
+  CompanyCode: 00
   ProductCode: CTR-P-AUDP
 
 AccessControlInfo:
@@ -15,7 +15,6 @@ AccessControlInfo:
   UseOtherVariationSaveData: false
   FileSystemAccess:
   - SdCard
-  MemoryMapping: 0x08000000
   CoreVersion: 2
   DescVersion: 2
   FirmwareType: CtrStandard
@@ -26,3 +25,4 @@ AccessControlInfo:
   ExHeader:
     SystemMode: Prod
     SystemModeExt: Legacy
+    EnableL2Cache: true
