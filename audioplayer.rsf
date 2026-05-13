@@ -1,26 +1,10 @@
 BasicInfo:
-  Title:        "3DS Audio Player"
-  CompanyCode:  "AU"
-  ProductCode:  "CTR-P-AUPL"
-  Logo:         Licensed
+  Title: Tunes3DS
+  CompanyCode: "VY"
+  ProductCode: CTR-P-TUNE
+  ContentType: Application
+  Logo: Nintendo
 
 TitleInfo:
-  Platform:     CTR
-  Category:     Application
-
-RomFs:
-  RootPath:     romfs
-
-SystemControlInfo:
-  SaveDataSize:    0KB
-  RemasterVersion: 0
-  StackSize:       0x4000
-
-AccessControlInfo:
-  CoreVersion: 0
-
-  IdealProcessor: 0
-  AffinityMask:   1
-  Priority:       16
-  MaxCpu:         0
-  MemoryType:     Application
+  UniqueId: 0xF1234
+  Category: Application
