@@ -1,141 +1,46 @@
-BasicInfo:
-  Title                   : 3DS Audio Player
-  ProductCode             : CTR-P-AUDP
-  Logo                    : Nintendo
+# audioplayer.rsf — makerom ROM Spec File
+#
+# Minimal working RSF for a homebrew CIA.
+#
+# NOTES ON EXTENDED MEMORY:
+#   Old 3DS extended memory (96MB) is requested via SystemMode below.
+#   This requires Luma3DS with "Enable game patching" active.
+#   Without Luma patching the kernel silently falls back to 64MB — it
+#   will NOT crash the Home Menu.
+#
+#   New3dsSystemMode controls the extra ARM11 cores on New 3DS only.
+#   Setting it to "124MB" gives the New 3DS full APPLICATION memory.
+#
+# DO NOT use -exefslogo with makerom unless you supply an actual logo
+# binary. Without it makerom writes zeros/garbage into the ExeFS logo
+# section and the Home Menu crashes with a data abort when it tries to
+# read it.
 
-RomFs:
-  RootPath                : romfs
+BasicInfo:
+  Title:        "3DS Audio Player"
+  CompanyCode:  "AU"
+  ProductCode:  "CTR-P-AUPL"
+  Logo:         Licensed
 
 TitleInfo:
-  Category                : Application
-  UniqueId                : 0xF7AB1
+  Platform:     CTR
+  Category:     Application
 
-Option:
-  UseOnSD                 : true
-  FreeProductCode         : true
-  MediaFootPadding        : false
-  EnableCrypt             : false
-  EnableCompress          : true
-
-AccessControlInfo:
-  CoreVersion                   : 2
-  DescVersion                   : 2
-
-  ReleaseKernelMajor            : "02"
-  ReleaseKernelMinor            : "33"
-
-  UseExtSaveData                : false
-
-  FileSystemAccess:
-   - DirectSdmc
-   - DirectSdmcWrite
-   - Shell
-
-  MemoryType                    : Application
-  SystemMode                    : 64MB
-  IdealProcessor                : 0
-  AffinityMask                  : 1
-  Priority                      : 48
-  MaxCpu                        : 0
-  HandleTableSize               : 0x200
-  DisableDebug                  : false
-  EnableForceDebug              : false
-  CanWriteSharedPage            : true
-  CanUsePrivilegedPriority      : false
-  CanUseNonAlphabetAndNumber    : true
-  PermitMainFunctionArgument    : true
-  CanShareDeviceMemory          : true
-  RunnableOnSleep               : true
-  SpecialMemoryArrange          : true
-
-  SystemModeExt                 : 124MB
-  CpuSpeed                      : 804MHz
-  EnableL2Cache                 : true
-  CanAccessCore2                : true
-
-  IORegisterMapping:
-   - 1ff00000-1ff7ffff
-
-  SystemCallAccess:
-    ArbitrateAddress: 34
-    Break: 60
-    CancelTimer: 28
-    ClearEvent: 25
-    ClearTimer: 29
-    CloseHandle: 35
-    ConnectToPort: 45
-    ControlMemory: 1
-    CreateAddressArbiter: 33
-    CreateEvent: 23
-    CreateMemoryBlock: 30
-    CreateMutex: 19
-    CreateSemaphore: 21
-    CreateThread: 8
-    CreateTimer: 26
-    DuplicateHandle: 39
-    ExitProcess: 3
-    ExitThread: 9
-    GetCurrentProcessorNumber: 17
-    GetHandleInfo: 41
-    GetProcessId: 53
-    GetProcessIdOfThread: 54
-    GetProcessIdealProcessor: 6
-    GetProcessInfo: 43
-    GetResourceLimit: 56
-    GetResourceLimitCurrentValues: 58
-    GetResourceLimitLimitValues: 57
-    GetSystemInfo: 42
-    GetSystemTick: 40
-    GetThreadContext: 59
-    GetThreadId: 55
-    GetThreadIdealProcessor: 15
-    GetThreadInfo: 44
-    GetThreadPriority: 11
-    MapMemoryBlock: 31
-    OutputDebugString: 61
-    QueryMemory: 2
-    ReleaseMutex: 20
-    ReleaseSemaphore: 22
-    SendSyncRequest1: 46
-    SendSyncRequest2: 47
-    SendSyncRequest3: 48
-    SendSyncRequest4: 49
-    SendSyncRequest: 50
-    SetThreadPriority: 12
-    SetTimer: 27
-    SignalEvent: 24
-    SleepThread: 10
-    UnmapMemoryBlock: 32
-    WaitSynchronization1: 36
-    WaitSynchronizationN: 37
-
-  ServiceAccessControl:
-   - APT:U
-   - cfg:u
-   - csnd:SND
-   - dsp::DSP
-   - fs:USER
-   - gsp::Gpu
-   - hid:USER
-   - ndm:u
-   - ptm:u
+RomFs:
+  RootPath:     romfs
 
 SystemControlInfo:
-  SaveDataSize: 0K
-  RemasterVersion: 0
-  StackSize: 0x80000
+  StackSize:    0x100000
 
-  Dependency:
-    cfg: 0x0004013000001702
-    codec: 0x0004013000001802
-    csnd: 0x0004013000002702
-    dsp: 0x0004013000001a02
-    gpio: 0x0004013000001b02
-    gsp: 0x0004013000001c02
-    hid: 0x0004013000001d02
-    i2c: 0x0004013000001e02
-    mcu: 0x0004013000001f02
-    ndm: 0x0004013000002b02
-    pdn: 0x0004013000002102
-    ptm: 0x0004013000002202
-    spi: 0x0004013000002302
+AccessControlInfo:
+  FileSystemAccess:
+    - SdmcRw
+  UseOtherVariationSaveData: false
+
+ExHeader:
+  # 96MB on old 3DS with Luma3DS; silently falls back to 64MB without it
+  SystemMode:        96MB
+  # Full 124MB APPLICATION memory on New 3DS
+  New3dsSystemMode:  124MB
+  # Enables the extra ARM11 cores + L2 cache on New 3DS
+  New3dsCpuSpeed:    804MHz
