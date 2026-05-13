@@ -65,7 +65,7 @@ jobs:
             https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip
           unzip -o /tmp/makerom.zip makerom -d /usr/local/bin
           chmod +x /usr/local/bin/makerom
-          makerom --version
+          makerom -help 2>&1 | head -1 || true
 
       - name: Download bannertool 1.2.0
         run: |
