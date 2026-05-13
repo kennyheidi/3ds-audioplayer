@@ -1,46 +1,30 @@
 # audioplayer.rsf — makerom ROM Spec File
-#
-# Minimal working RSF for a homebrew CIA.
-#
-# NOTES ON EXTENDED MEMORY:
-#   Old 3DS extended memory (96MB) is requested via SystemMode below.
-#   This requires Luma3DS with "Enable game patching" active.
-#   Without Luma patching the kernel silently falls back to 64MB — it
-#   will NOT crash the Home Menu.
-#
-#   New3dsSystemMode controls the extra ARM11 cores on New 3DS only.
-#   Setting it to "124MB" gives the New 3DS full APPLICATION memory.
-#
-# DO NOT use -exefslogo with makerom unless you supply an actual logo
-# binary. Without it makerom writes zeros/garbage into the ExeFS logo
-# section and the Home Menu crashes with a data abort when it tries to
-# read it.
 
 BasicInfo:
-  Title:        "3DS Audio Player"
-  CompanyCode:  "AU"
-  ProductCode:  "CTR-P-AUPL"
-  Logo:         Licensed
+  Title:         "3DS Audio Player"
+  CompanyCode:   "AU"
+  ProductCode:   "CTR-P-AUPL"
+  Logo:          Licensed
 
 TitleInfo:
-  Platform:     CTR
-  Category:     Application
+  Platform:      CTR
+  Category:      Application
 
 RomFs:
-  RootPath:     romfs
+  RootPath:      romfs
 
 SystemControlInfo:
-  StackSize:    0x100000
+  # ExHeader must be nested under SystemControlInfo
+  ExHeader:
+    StackSize:      0x100000
+    # 96MB on old 3DS with Luma3DS; silently falls back to 64MB without it
+    SystemMode:     96MB
+    # Full 124MB APPLICATION memory on New 3DS
+    New3dsSystemMode: 124MB
+    # Enables the extra ARM11 cores + L2 cache on New 3DS
+    New3dsCpuSpeed: 804MHz
 
 AccessControlInfo:
   FileSystemAccess:
     - SdmcRw
   UseOtherVariationSaveData: false
-
-ExHeader:
-  # 96MB on old 3DS with Luma3DS; silently falls back to 64MB without it
-  SystemMode:        96MB
-  # Full 124MB APPLICATION memory on New 3DS
-  New3dsSystemMode:  124MB
-  # Enables the extra ARM11 cores + L2 cache on New 3DS
-  New3dsCpuSpeed:    804MHz
