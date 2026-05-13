@@ -21,17 +21,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install cmake
-        run: apt-get update -qq && apt-get install -y --no-install-recommends cmake
+      - name: Install system dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends cmake wget unzip
+
+      - name: Install 3DS Build Tools (makerom and bannertool)
+        run: |
+          # Download and install makerom from official project repository releases
+          wget -q github.com
+          unzip -q makerom-v0.19.0-ubuntu_x86_64.zip -d /tmp/makerom_out
+          mv /tmp/makerom_out/makerom /opt/devkitpro/tools/bin/makerom
+          chmod +x /opt/devkitpro/tools/bin/makerom
+
+          # Download and install bannertool from releases archive 
+          wget -q github.com
+          unzip -q bannertool.zip -d /tmp/bannertool_out
+          mv /tmp/bannertool_out/linux-x86_64/bannertool /opt/devkitpro/tools/bin/bannertool
+          chmod +x /opt/devkitpro/tools/bin/bannertool
 
       - name: Build and install citro3d
         run: |
-          git clone --depth 1 https://github.com/devkitPro/citro3d.git /tmp/citro3d
+          git clone --depth 1 https://github.com /tmp/citro3d
           make -C /tmp/citro3d install
 
       - name: Build and install citro2d
         run: |
-          git clone --depth 1 https://github.com/devkitPro/citro2d.git /tmp/citro2d
+          git clone --depth 1 https://github.com /tmp/citro2d
           cd /tmp/citro2d
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake \
@@ -43,10 +59,10 @@ jobs:
       - name: Download audio decoders
         run: |
           mkdir -p source vendor
-          curl -fsSL -o source/dr_mp3.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_mp3.h
-          curl -fsSL -o source/dr_flac.h https://raw.githubusercontent.com/mackron/dr_libs/master/dr_flac.h
-          curl -fsSL -o source/dr_wav.h  https://raw.githubusercontent.com/mackron/dr_libs/master/dr_wav.h
-          curl -fsSL -o vendor/stb_vorbis.c https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c
+          curl -fsSL -o source/dr_mp3.h  https://githubusercontent.com
+          curl -fsSL -o source/dr_flac.h https://githubusercontent.com
+          curl -fsSL -o source/dr_wav.h  https://githubusercontent.com
+          curl -fsSL -o vendor/stb_vorbis.c https://githubusercontent.com
 
       - name: Create icon and directories
         run: |
@@ -56,9 +72,16 @@ jobs:
       - name: Build
         run: make
 
-      - name: Upload 3dsx
+      - name: Upload 3dsx Artifact
         uses: actions/upload-artifact@v4
         with:
           name: audioplayer-3dsx
           path: audioplayer.3dsx
+          if-no-files-found: error
+
+      - name: Upload CIA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audioplayer-cia
+          path: audioplayer.cia
           if-no-files-found: error
