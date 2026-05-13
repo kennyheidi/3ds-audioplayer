@@ -19,9 +19,6 @@ SystemControlInfo:
 AccessControlInfo:
   CoreVersion: 0
 
-  FileSystemAccess:
-    - SdmcReadWrite
-
   IdealProcessor: 0
   AffinityMask:   1
   Priority:       16
