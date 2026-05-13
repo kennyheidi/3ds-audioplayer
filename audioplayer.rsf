@@ -1,5 +1,3 @@
-# audioplayer.rsf — makerom ROM Spec File
-
 BasicInfo:
   Title:         "3DS Audio Player"
   CompanyCode:   "AU"
@@ -13,18 +11,18 @@ TitleInfo:
 RomFs:
   RootPath:      romfs
 
+# In newer makerom, these are often moved to the top level 
+# or specific sub-blocks. Try this simplified SystemControlInfo:
 SystemControlInfo:
-  # ExHeader must be nested under SystemControlInfo
-  ExHeader:
-    StackSize:      0x100000
-    # 96MB on old 3DS with Luma3DS; silently falls back to 64MB without it
-    SystemMode:     96MB
-    # Full 124MB APPLICATION memory on New 3DS
-    New3dsSystemMode: 124MB
-    # Enables the extra ARM11 cores + L2 cache on New 3DS
-    New3dsCpuSpeed: 804MHz
+  SaveDataSize: 0KB
+  StackSize: 0x100000
 
+# AccessControlInfo handles the permissions and hardware modes
 AccessControlInfo:
   FileSystemAccess:
     - SdmcRw
+  # Modern makerom often looks here for the SystemMode
+  SystemMode: 96MB
+  New3dsSystemMode: 124MB
+  New3dsCpuSpeed: 804MHz
   UseOtherVariationSaveData: false
