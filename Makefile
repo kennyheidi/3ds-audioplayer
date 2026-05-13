@@ -14,7 +14,7 @@ SOURCES      := source
 ROMFS        := romfs
 RSF          := app.rsf
 
-# devkitPro toolchain
+# devkitPro toolchain verification
 ifeq ($(strip $(DEVKITPRO)),)
   $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path>")
 endif
@@ -62,7 +62,6 @@ OUTPUT   := $(CURDIR)/$(TARGET)
 #---------------------------------------------------------------------------------
 .PHONY: all clean
 
-# Compiles both 3DSX and CIA variants by default
 all: $(BUILD) $(OUTPUT).3dsx $(OUTPUT).cia
 
 $(BUILD):
@@ -78,16 +77,18 @@ $(OUTPUT).smdh:
 	smdhtool --create "$(APP_TITLE)" "$(APP_DESC)" "$(APP_AUTHOR)" \
 	    $(CTRULIB)/default_icon.png $@
 
+# Standard 3dsxtool compilation fixed (Removed broken --flags option)
 $(OUTPUT).3dsx: $(OUTPUT).elf $(OUTPUT).smdh
-	3dsxtool $< $@ --smdh=$(OUTPUT).smdh --romfs=$(ROMFS) --flags=0x00000002
+	3dsxtool $< $@ --smdh=$(OUTPUT).smdh --romfs=$(ROMFS)
 
-# New target rules to generate banner assets and link into an installable CIA
+# Rules for building system asset configurations for the CIA file target
 $(OUTPUT).bnr:
 	bannertool makebanner -i $(CTRULIB)/default_icon.png -a $(CTRULIB)/default_icon.png -o $@
 
 $(OUTPUT).icn:
 	bannertool makesmdh -s "$(APP_TITLE)" -l "$(APP_DESC)" -p "$(APP_AUTHOR)" -i $(CTRULIB)/default_icon.png -o $@
 
+# Final High Memory-Enabled CIA container generator
 $(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).bnr $(OUTPUT).icn $(RSF)
 	makerom -f cia -o $@ -rsf $(RSF) -elf $(OUTPUT).elf -banner $(OUTPUT).bnr -icon $(OUTPUT).icn -romfs $(ROMFS)
 
